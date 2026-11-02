@@ -1,0 +1,138 @@
+"""
+================================================================
+AUDIT MODULE
+================================================================
+Immutable, hash-chained audit logging.
+
+Every log entry stores:
+    previous_hash : SHA-256 of the previous entry in the chain
+    current_hash  : SHA-256 of (previous_hash + event details)
+
+Any modification of an existing entry breaks every subsequent
+hash, making tampering detectable - a blockchain-style audit trail.
+================================================================
+"""
+
+import hashlib
+from datetime import datetime
+
+from flask import has_request_context, request
+
+from models import AuditLog, db
+from security import get_risk_level
+
+GENESIS_HASH = "GENESIS"
+
+
+def compute_log_hash(
+    previous_hash,
+    timestamp,
+    email,
+    action,
+    ip,
+    device,
+    status,
+    filename,
+):
+    """SHA-256 over the canonical event string."""
+    canonical = "|".join([
+        str(previous_hash),
+        str(timestamp),
+        str(email),
+        str(action),
+        str(ip),
+        str(device),
+        str(status),
+        str(filename or ""),
+    ])
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def log_activity(email, action, filename=None, status="Success"):
+    """
+    Stores an immutable hash-chained audit log entry.
+    Returns the created AuditLog object.
+    """
+    if has_request_context():
+        forwarded = request.headers.get("X-Forwarded-For")
+        ip = forwarded.split(",")[0].strip() if forwarded else (
+            request.remote_addr or "Unknown"
+        )
+        device = request.headers.get("User-Agent", "Unknown")
+    else:
+        ip = "Unknown"
+        device = "Unknown"
+
+    last = AuditLog.query.order_by(AuditLog.id.desc()).first()
+    previous_hash = (
+        last.current_hash
+        if last and last.current_hash
+        else GENESIS_HASH
+    )
+
+    timestamp = datetime.utcnow()
+
+    user = None
+    risk_score = 0
+    risk_level = "Low"
+    if email:
+        from models import User
+        user = User.query.filter_by(email=email).first()
+        if user:
+            risk_score = user.risk_score
+            risk_level = get_risk_level(user.risk_score)
+
+    current_hash = compute_log_hash(
+        previous_hash,
+        timestamp,
+        email,
+        action,
+        ip,
+        device,
+        status,
+        filename,
+    )
+
+    log = AuditLog(
+        email=email or "anonymous",
+        action=action,
+        filename=filename,
+        ip_address=ip,
+        device=device,
+        status=status,
+        risk_score=risk_score,
+        risk_level=risk_level,
+        timestamp=timestamp,
+        previous_hash=previous_hash,
+        current_hash=current_hash,
+    )
+
+    db.session.add(log)
+    db.session.commit()
+    return log
+
+
+def verify_chain():
+    """
+    Verifies the integrity of the whole audit chain.
+    Returns (valid: bool, broken_entry_id: int|None).
+    """
+    logs = AuditLog.query.order_by(AuditLog.id.asc()).all()
+    prev = GENESIS_HASH
+    for log in logs:
+        if log.previous_hash != prev:
+            return False, log.id
+        recomputed = compute_log_hash(
+            prev,
+            log.timestamp,
+            log.email,
+            log.action,
+            log.ip_address,
+            log.device,
+            log.status,
+            log.filename,
+        )
+        if recomputed != log.current_hash:
+            return False, log.id
+        prev = log.current_hash
+    return True, None

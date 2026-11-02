@@ -1,0 +1,230 @@
+"""
+================================================================
+STORAGE MANAGER
+================================================================
+S3-aware cloud storage with automatic local fallback.
+
+- AWS credentials are ALWAYS read from environment variables via
+  config (never hardcoded in code).
+- STORAGE_BACKEND=auto:
+      credentials + bucket present  -> real Amazon S3
+      credentials / bucket missing  -> files saved inside uploads/
+- If an S3 call fails at runtime (bad credentials, NoSuchBucket,
+  network outage) the system degrades gracefully: the file is
+  stored / fetched from local uploads/ instead of crashing.
+- download_file / delete_file transparently work against S3 OR
+  local uploads/ depending on where the object actually exists.
+
+The API surface is identical in every mode:
+    upload_file(local_path, key)      -> True if S3, False if local
+    download_file(key, local_path)
+    delete_file(key)
+    list_files(prefix="")
+    s3.list_objects_v2(Bucket=..., Prefix=...)
+================================================================
+"""
+
+import datetime
+import logging
+import os
+import shutil
+
+from config import Config
+
+logger = logging.getLogger(__name__)
+
+# ------------------------------------------------------------
+# Backend resolution (environment-driven, never hardcoded)
+# ------------------------------------------------------------
+BACKEND = (Config.STORAGE_BACKEND or "auto").strip().lower()
+HAS_CREDENTIALS = bool(
+    Config.AWS_ACCESS_KEY_ID
+    and Config.AWS_SECRET_ACCESS_KEY
+    and Config.AWS_REGION
+)
+HAS_BUCKET = bool(Config.AWS_BUCKET_NAME)
+
+# S3 is used when explicitly forced with "s3", or when "auto" and a
+# complete AWS configuration exists in the environment.
+USE_S3 = BACKEND == "s3" or (
+    BACKEND == "auto" and HAS_CREDENTIALS and HAS_BUCKET
+)
+
+# Local storage root: the project "uploads/" folder (no AWS needed).
+LOCAL_BUCKET_ROOT = Config.UPLOAD_FOLDER
+
+
+# ------------------------------------------------------------
+# LOCAL STORAGE (uploads/)
+# ------------------------------------------------------------
+
+def _local_path(key):
+    """Maps an object key to a filesystem path (no traversal)."""
+    safe = key.replace("\\", "/").lstrip("/")
+    return os.path.join(LOCAL_BUCKET_ROOT, safe)
+
+
+class _LocalBucket:
+    """Mimics the small subset of boto3's S3 client we use."""
+
+    def list_objects_v2(self, Bucket, Prefix=""):
+        items = []
+        if os.path.isdir(LOCAL_BUCKET_ROOT):
+            for root, _dirs, files in os.walk(LOCAL_BUCKET_ROOT):
+                for name in files:
+                    full = os.path.join(root, name)
+                    rel = os.path.relpath(full, LOCAL_BUCKET_ROOT)
+                    key = rel.replace("\\", "/")
+                    if Prefix and not key.startswith(Prefix):
+                        continue
+                    items.append({
+                        "Key": key,
+                        "Size": os.path.getsize(full),
+                        "LastModified": datetime.datetime.fromtimestamp(
+                            os.path.getmtime(full)
+                        ),
+                    })
+        return {"Contents": items}
+
+
+def _local_upload(local_file_path, key):
+    os.makedirs(
+        os.path.dirname(_local_path(key)) or LOCAL_BUCKET_ROOT, exist_ok=True
+    )
+    shutil.copyfile(local_file_path, _local_path(key))
+
+
+def _local_download(key, local_file_path):
+    src = _local_path(key)
+    if not os.path.exists(src):
+        raise FileNotFoundError(
+            f"Object '{key}' not found in local storage "
+            f"({LOCAL_BUCKET_ROOT})."
+        )
+    os.makedirs(os.path.dirname(local_file_path) or ".", exist_ok=True)
+    shutil.copyfile(src, local_file_path)
+
+
+def _local_delete(key):
+    path = _local_path(key)
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def _local_list(prefix=""):
+    return _LocalBucket().list_objects_v2(
+        "local", Prefix=prefix
+    ).get("Contents", [])
+
+
+# ------------------------------------------------------------
+# AWS S3 CLIENT (built ONLY from environment variables)
+# ------------------------------------------------------------
+s3 = None
+BUCKET = "local"
+
+if USE_S3:
+    try:
+        import boto3
+
+        s3 = boto3.client(
+            "s3",
+            aws_access_key_id=Config.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=Config.AWS_SECRET_ACCESS_KEY,
+            region_name=Config.AWS_REGION,
+        )
+        BUCKET = Config.AWS_BUCKET_NAME
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Could not create S3 client: %s", exc)
+        s3 = None
+
+if s3 is None:
+    s3 = _LocalBucket()
+    USE_S3 = False
+
+
+# ------------------------------------------------------------
+# UNIFIED INTERFACE (S3 with graceful local fallback)
+# ------------------------------------------------------------
+
+def upload_file(local_file_path, s3_file_name):
+    """Uploads a local file. Returns True if stored in S3, False if local.
+
+    On any S3 failure the real exception is logged and the file is
+    stored locally instead of crashing.
+    """
+    if USE_S3 and s3 is not None:
+        try:
+            s3.upload_file(local_file_path, BUCKET, s3_file_name)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            # Log the real exception (NoSuchBucket, missing credentials,
+            # network outage...) then gracefully store the encrypted file
+            # locally instead of crashing the upload.
+            logger.error(
+                "AWS storage unavailable: %s. "
+                "Saving encrypted file locally.",
+                exc,
+            )
+    _local_upload(local_file_path, s3_file_name)
+    return False
+
+
+def download_file(s3_file_name, local_file_path):
+    """Downloads an object from S3 OR local uploads/ (wherever it exists)."""
+    if USE_S3 and s3 is not None:
+        try:
+            s3.download_file(BUCKET, s3_file_name, local_file_path)
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "S3 download failed for '%s': %s. Trying local storage.",
+                s3_file_name,
+                exc,
+            )
+    if os.path.exists(_local_path(s3_file_name)):
+        _local_download(s3_file_name, local_file_path)
+        return
+    raise FileNotFoundError(
+        f"Object '{s3_file_name}' not found in S3 or local storage."
+    )
+
+
+def delete_file(s3_file_name):
+    """Deletes an object from S3 AND local uploads/ (wherever it exists)."""
+    if USE_S3 and s3 is not None:
+        try:
+            s3.delete_object(Bucket=BUCKET, Key=s3_file_name)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("S3 delete failed for '%s': %s", s3_file_name, exc)
+    _local_delete(s3_file_name)
+
+
+def list_files(prefix=""):
+    """Lists objects from the active storage backend."""
+    if USE_S3 and s3 is not None:
+        try:
+            response = s3.list_objects_v2(Bucket=BUCKET, Prefix=prefix)
+            return response.get("Contents", [])
+        except Exception as exc:  # noqa: BLE001
+            logger.error("S3 listing failed: %s", exc)
+    return _local_list(prefix)
+
+
+# ------------------------------------------------------------
+# STARTUP VALIDATION
+# ------------------------------------------------------------
+print("=" * 35)
+print("AWS Configuration")
+print("=" * 35)
+print(f"Bucket: {Config.AWS_BUCKET_NAME or '(not set)'}")
+print(f"Region: {Config.AWS_REGION or '(not set)'}")
+print(f"Storage Backend: {BACKEND}")
+if USE_S3:
+    print("Mode: Amazon S3 (credentials found)")
+else:
+    print("WARNING:")
+    print("AWS credentials not found.")
+    print("")
+    print("Using LOCAL storage.")
+print("=" * 35)

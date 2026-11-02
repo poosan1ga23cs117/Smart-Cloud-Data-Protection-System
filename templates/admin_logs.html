@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>All Audit Logs | Admin</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="dashboard-header">
+
+        <div>
+
+            <h1 class="dashboard-title">All Audit Logs</h1>
+
+            <p class="dashboard-subtitle">
+                Immutable Hash-Chained Audit Trail | Zero Trust Monitoring
+            </p>
+
+        </div>
+
+        <div class="header-actions">
+
+            <button onclick="location.href='/admin'">Admin Dashboard</button>
+
+            <button onclick="location.href='/admin/users'">All Users</button>
+
+        </div>
+
+    </div>
+
+    <!-- Search -->
+
+    <div class="card">
+
+        <h2>Search Logs</h2>
+
+        <form method="GET" action="/admin/logs" class="upload-box">
+
+            <input
+                type="text"
+                name="q"
+                value="{{ search }}"
+                placeholder="Search by user, action, file or IP...">
+
+            <button type="submit">Search</button>
+
+            {% if search %}
+
+            <button
+                type="button"
+                class="upload-btn"
+                onclick="location.href='/admin/logs'">
+
+                Clear
+
+            </button>
+
+            {% endif %}
+
+        </form>
+
+    </div>
+
+    <!-- Logs table -->
+
+    <div class="card">
+
+        <h2>Logs ({{ logs|length }})</h2>
+
+        <div class="table-container">
+
+        <table class="audit-table">
+
+            <thead>
+
+            <tr>
+
+                <th>ID</th>
+
+                <th>User</th>
+
+                <th>Action</th>
+
+                <th>File</th>
+
+                <th>IP</th>
+
+                <th>Status</th>
+
+                <th>Risk</th>
+
+                <th>Prev Hash</th>
+
+                <th>Hash</th>
+
+                <th>Time</th>
+
+            </tr>
+
+            </thead>
+
+            <tbody>
+
+            {% for log in logs %}
+
+            <tr>
+
+                <td>{{ log.id }}</td>
+
+                <td>{{ log.email }}</td>
+
+                <td>{{ log.action }}</td>
+
+                <td>{{ log.filename or "-" }}</td>
+
+                <td>{{ log.ip_address }}</td>
+
+                <td>{{ log.status }}</td>
+
+                <td>{{ log.risk_level }}</td>
+
+                <td class="hash-cell">{{ log.previous_hash[:12] }}…</td>
+
+                <td class="hash-cell">{{ log.current_hash[:12] }}…</td>
+
+                <td>{{ log.timestamp|to_ist }}</td>
+
+            </tr>
+
+            {% endfor %}
+
+            </tbody>
+
+        </table>
+
+        </div>
+
+    </div>
+
+    <div class="footer">
+
+        Smart Cloud Data Protection System | Admin Console
+
+    </div>
+
+</div>
+
+</body>
+
+</html>

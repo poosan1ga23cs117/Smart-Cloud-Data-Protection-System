@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Admin Dashboard | Smart Cloud Data Protection System</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <!-- ===================================================== -->
+    <!-- Header -->
+    <!-- ===================================================== -->
+
+    <div class="dashboard-header">
+
+        <div>
+
+            <h1 class="dashboard-title">
+                Admin Dashboard
+            </h1>
+
+            <p class="dashboard-subtitle">
+                Zero Trust Security Monitoring | {{ admin.email }}
+            </p>
+
+        </div>
+
+        <div class="header-actions">
+
+            <button
+                onclick="location.href='/admin/users'">
+
+                All Users
+
+            </button>
+
+            <button
+                onclick="location.href='/admin/logs'">
+
+                All Logs
+
+            </button>
+
+            <button
+                onclick="location.href='/dashboard/{{ admin.email }}'">
+
+                My Dashboard
+
+            </button>
+
+            <button
+                class="danger"
+                onclick="location.href='/logout'">
+
+                Logout
+
+            </button>
+
+        </div>
+
+    </div>
+
+    <!-- ===================================================== -->
+    <!-- Statistics -->
+    <!-- ===================================================== -->
+
+    <div class="stats-grid">
+
+        <div class="stat-card">
+
+            <div class="stat-title">Total Users</div>
+
+            <div class="stat-value">{{ total_users }}</div>
+
+        </div>
+
+        <div class="stat-card">
+
+            <div class="stat-title">Total Audit Logs</div>
+
+            <div class="stat-value">{{ total_logs }}</div>
+
+        </div>
+
+        <div class="stat-card">
+
+            <div class="stat-title">Locked Accounts</div>
+
+            <div class="stat-value status-danger">
+                {{ locked_accounts }}
+            </div>
+
+        </div>
+
+        <div class="stat-card">
+
+            <div class="stat-title">High Risk Users</div>
+
+            <div class="stat-value status-warning">
+                {{ high_risk_users }}
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- ===================================================== -->
+    <!-- Search -->
+    <!-- ===================================================== -->
+
+    <div class="card">
+
+        <h2>Search</h2>
+
+        <div class="upload-box">
+
+            <input
+                id="searchInput"
+                type="text"
+                placeholder="Search users or audit logs...">
+
+            <button onclick="search()">Search</button>
+
+        </div>
+
+    </div>
+
+    <!-- ===================================================== -->
+    <!-- Recent Logins -->
+    <!-- ===================================================== -->
+
+    <div class="card">
+
+        <h2>Recent Logins</h2>
+
+        <table class="audit-table">
+
+            <tr>
+                <th>User</th>
+                <th>Action</th>
+                <th>IP</th>
+                <th>Status</th>
+                <th>Time</th>
+            </tr>
+
+            {% for log in recent_logins %}
+
+            <tr>
+                <td>{{ log.email }}</td>
+                <td>{{ log.action }}</td>
+                <td>{{ log.ip_address }}</td>
+                <td>{{ log.status }}</td>
+                <td>{{ log.timestamp|to_ist }}</td>
+            </tr>
+
+            {% endfor %}
+
+        </table>
+
+    </div>
+
+    <!-- ===================================================== -->
+    <!-- Recent Uploads / Downloads -->
+    <!-- ===================================================== -->
+
+    <div class="stats-grid two-col">
+
+        <div class="card">
+
+            <h2>Recent Uploads</h2>
+
+            <table class="audit-table">
+
+                <tr>
+                    <th>User</th>
+                    <th>File</th>
+                    <th>Time</th>
+                </tr>
+
+                {% for log in recent_uploads %}
+
+                <tr>
+                    <td>{{ log.email }}</td>
+                    <td>{{ log.filename or "-" }}</td>
+                    <td>{{ log.timestamp|to_ist }}</td>
+                </tr>
+
+                {% endfor %}
+
+            </table>
+
+        </div>
+
+        <div class="card">
+
+            <h2>Recent Downloads</h2>
+
+            <table class="audit-table">
+
+                <tr>
+                    <th>User</th>
+                    <th>File</th>
+                    <th>Time</th>
+                </tr>
+
+                {% for log in recent_downloads %}
+
+                <tr>
+                    <td>{{ log.email }}</td>
+                    <td>{{ log.filename or "-" }}</td>
+                    <td>{{ log.timestamp|to_ist }}</td>
+                </tr>
+
+                {% endfor %}
+
+            </table>
+
+        </div>
+
+    </div>
+
+    <div class="footer">
+
+        Smart Cloud Data Protection System
+
+        <br>
+
+        Zero Trust Architecture | Admin Console
+
+    </div>
+
+</div>
+
+<script>
+
+function search() {
+
+    const q = document.getElementById("searchInput").value.trim();
+
+    if (!q) return;
+
+    window.location.href = "/admin/users?q=" + encodeURIComponent(q);
+
+}
+
+</script>
+
+</body>
+
+</html>

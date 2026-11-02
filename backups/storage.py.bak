@@ -1,0 +1,920 @@
+"""
+================================================================
+STORAGE BLUEPRINT
+================================================================
+Secure file pipeline:
+
+  UPLOAD:
+    file -> SHA-256 (store) -> AES-256-GCM (unique key) -> HMAC
+    -> split into fragments -> upload fragments to S3
+
+  DOWNLOAD:
+    retrieve fragments -> merge -> HMAC + GCM verify
+    -> decrypt -> SHA-256 verify -> serve file
+
+If the SHA-256 hash does not match, the download is blocked
+and the tampering event is logged + emailed.
+================================================================
+"""
+
+import os
+import shutil
+import tempfile
+import uuid
+from datetime import datetime
+
+from flask import (
+    Blueprint,
+    after_this_request,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    session,
+)
+from werkzeug.utils import secure_filename
+
+import audit
+from config import Config
+from timezone_utils import to_ist
+from crypto import (
+    IntegrityError,
+    decrypt_file,
+    encrypt_file,
+    merge_files,
+    sha256_file,
+    split_file,
+)
+from email_service import (
+    alert_file_downloaded,
+    alert_file_uploaded,
+    alert_high_risk_operation,
+    alert_multiple_otp_failures,
+    alert_repeated_delete_attempts,
+    alert_repeated_download_attempts,
+    alert_tampering,
+    send_delete_otp,
+    send_download_otp,
+    send_file_deleted,
+)
+from models import File, User, db
+from security import (
+    get_risk_level,
+    is_account_locked,
+    issue_stepup_otp,
+    limiter,
+    lock_account,
+    sensitive_operation_blocked,
+)
+from s3_manager import (
+    BUCKET,
+    delete_file as s3_delete,
+    download_file as s3_download,
+    s3,
+    upload_file as s3_upload,
+)
+
+storage_bp = Blueprint("storage", __name__)
+
+
+def _session_user():
+    email = session.get("email")
+    if not email:
+        return None, (jsonify({
+            "message": "Session Expired. Please login again."
+        }), 401)
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return None, (jsonify({
+            "message": "User not found."
+        }), 404)
+    return user, None
+
+
+# ============================================================
+# UPLOAD FILE
+# ============================================================
+
+@storage_bp.post("/upload")
+@limiter.limit("20 per minute")
+def upload():
+    user, error = _session_user()
+    if error:
+        return error
+
+    email = user.email
+
+    # ---------------- Account lock check ----------------
+    if is_account_locked(user):
+        user.risk_score += 10
+        db.session.commit()
+        audit.log_activity(
+            email=email,
+            action="Upload Blocked",
+            status="Blocked",
+        )
+        return jsonify({
+            "message": "Account is locked."
+        }), 403
+
+    # ---------------- File validation ----------------
+    if "file" not in request.files:
+        return jsonify({
+            "message": "No file selected."
+        }), 400
+
+    file = request.files["file"]
+
+    if not file.filename:
+        return jsonify({
+            "message": "No file selected."
+        }), 400
+
+    filename = secure_filename(file.filename) or "file"
+    file_size = file.content_length or 0
+    file_type = os.path.splitext(filename)[1]
+
+    temp_dir = tempfile.mkdtemp(dir=Config.UPLOAD_FOLDER)
+
+    try:
+        original_path = os.path.join(temp_dir, filename)
+        file.save(original_path)
+
+        # 1) SHA-256 digest of the plaintext (integrity anchor)
+        digest = sha256_file(original_path)
+
+        # 2) Encrypt (random per-file key, master key wrap, HMAC)
+        encrypted_path = encrypt_file(original_path)
+
+        # 3) Fragment the encrypted file
+        parts = split_file(encrypted_path)
+        fragment_count = len(parts)
+
+        # 4) Upload fragments to S3 under a unique prefix.
+        #    s3_upload returns True when stored in S3 and False when it
+        #    fell back to local uploads/ (S3 unavailable / not configured).
+        prefix = uuid.uuid4().hex
+        local_fallback = False
+        for index, part in enumerate(parts):
+            if not s3_upload(part, f"{prefix}.enc.part{index}"):
+                local_fallback = True
+
+        # 5) Persist metadata
+        record = File(
+            email=email,
+            filename=filename,
+            s3_prefix=prefix,
+            fragment_count=fragment_count,
+            sha256_hash=digest,
+            file_size=file_size,
+            file_type=file_type,
+            upload_time=datetime.utcnow(),
+        )
+        db.session.add(record)
+
+        user.risk_score += 2
+        db.session.commit()
+
+        audit.log_activity(
+            email=email,
+            action="File Uploaded",
+            filename=filename,
+            status="Success",
+        )
+        alert_file_uploaded(
+            email,
+            filename,
+            fragment_count,
+            datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+        )
+
+        if local_fallback:
+            upload_message = (
+                "AWS storage unavailable. Saving encrypted file locally."
+            )
+        else:
+            upload_message = "File uploaded successfully."
+
+        return jsonify({
+            "message": upload_message,
+            "filename": filename,
+            "sha256": digest,
+            "fragments": fragment_count,
+            "storage": "local" if local_fallback else "s3",
+            "risk_score": user.risk_score,
+            "risk_level": get_risk_level(user.risk_score),
+        })
+
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        audit.log_activity(
+            email=email,
+            action="Upload Failed",
+            filename=file.filename or "unknown",
+            status="Failed",
+        )
+        return jsonify({
+            "message": str(exc)
+        }), 500
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+# ============================================================
+# LIST USER FILES
+# ============================================================
+
+@storage_bp.get("/files/<email>")
+def files(email):
+    if "email" not in session:
+        return jsonify({
+            "message": "Session Expired. Please login again."
+        }), 401
+
+    if session["email"] != email:
+        return jsonify({
+            "message": "Unauthorized Access."
+        }), 403
+
+    user = User.query.filter_by(email=email).first()
+
+    if not user:
+        return jsonify({
+            "message": "User not found."
+        }), 404
+
+    if is_account_locked(user):
+        audit.log_activity(
+            email=email,
+            action="View Files Blocked",
+            status="Blocked",
+        )
+        return jsonify({
+            "message": "Account is locked."
+        }), 403
+
+    try:
+        records = File.query.filter_by(email=email).order_by(
+            File.upload_time.desc()
+        ).all()
+
+        result = [
+            {
+                "id": r.id,
+                "filename": r.filename,
+                "size": r.file_size,
+                "last_modified": to_ist(r.upload_time),
+                "sha256": r.sha256_hash,
+                "fragments": r.fragment_count,
+            }
+            for r in records
+        ]
+
+        # Legacy compatibility: include old single .enc objects
+        # (uploaded before the fragmentation upgrade) that are not
+        # tracked in the File table.
+        try:
+            contents = s3.list_objects_v2(Bucket=BUCKET).get(
+                "Contents", []
+            )
+            for obj in contents:
+                key = obj["Key"]
+                if key.endswith(".enc") and ".enc.part" not in key:
+                    result.append({
+                        "id": None,
+                        "filename": key,
+                        "size": obj["Size"],
+                        "last_modified": obj["LastModified"].strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        ),
+                        "sha256": "-",
+                        "fragments": 1,
+                        "legacy": True,
+                    })
+        except Exception:  # noqa: BLE001
+            pass
+
+        audit.log_activity(
+            email=email,
+            action="Viewed File List",
+            status="Success",
+        )
+
+        return jsonify(result)
+
+    except Exception as exc:  # noqa: BLE001
+        audit.log_activity(
+            email=email,
+            action="View Files Failed",
+            status="Failed",
+        )
+        return jsonify({
+            "message": str(exc)
+        }), 500
+
+
+# ============================================================
+# DOWNLOAD FILE
+# ============================================================
+
+@storage_bp.get("/download/<email>/<path:filename>")
+@limiter.limit("30 per minute")
+def download(email, filename):
+    if "email" not in session:
+        return jsonify({
+            "message": "Session Expired. Please login again."
+        }), 401
+
+    if session["email"] != email:
+        return jsonify({
+            "message": "Unauthorized Access."
+        }), 403
+
+    user = User.query.filter_by(email=email).first()
+
+    if not user:
+        return jsonify({
+            "message": "User not found."
+        }), 404
+
+    if is_account_locked(user):
+        user.risk_score += 10
+        db.session.commit()
+        audit.log_activity(
+            email=email,
+            action="Download Blocked",
+            filename=filename,
+            status="Blocked",
+        )
+        return jsonify({
+            "message": "Account is locked."
+        }), 403
+
+    # ---------------- Risk gate ----------------
+    # High risk accounts cannot download files: block + lock + alert.
+    blocked, reason = sensitive_operation_blocked(user)
+    if blocked:
+        lock_account(user)
+        db.session.commit()
+        audit.log_activity(
+            email=email,
+            action="High Risk Download Blocked",
+            filename=filename,
+            status="Blocked",
+        )
+        alert_high_risk_operation(
+            email,
+            "download",
+            filename,
+            user.risk_score,
+        )
+        return jsonify({
+            "message": reason,
+            "risk_score": user.risk_score,
+            "risk_level": get_risk_level(user.risk_score),
+        }), 403
+
+    # ---------------- Step-Up OTP challenge ----------------
+    # Every download requires a fresh Email OTP. Until the OTP is
+    # verified the file is NEVER reconstructed or served.
+    if session.get("download_authorized") != filename:
+        otp = issue_stepup_otp(user, "download")
+        session["pending_stepup"] = {
+            "intent": "download",
+            "email": email,
+            "filename": filename,
+        }
+        if Config.DEV_MODE:
+            session["stepup_otp_plaintext"] = otp
+        session.modified = True
+        send_download_otp(email, otp)
+        audit.log_activity(
+            email=email,
+            action="Download OTP Sent",
+            filename=filename,
+            status="Success",
+        )
+        return jsonify({
+            "message": (
+                "For your security, an OTP was sent to authorize "
+                "this download."
+            ),
+            "download_otp_required": True,
+            "email": email,
+            "filename": filename,
+            "otp_ttl_seconds": Config.OTP_TTL_SECONDS,
+        }), 202
+
+    # ---------------- OTP verified: single-use authorization ----------------
+    session.pop("download_authorized", None)
+    session.modified = True
+
+    temp_dir = tempfile.mkdtemp(dir=Config.UPLOAD_FOLDER)
+
+    try:
+        record = File.query.filter_by(
+            email=email, filename=filename
+        ).first()
+
+        if record:
+            # ---------------- Fragmented download ----------------
+            encrypted_path = os.path.join(
+                temp_dir, f"{record.s3_prefix}.enc"
+            )
+            part_paths = []
+            for index in range(record.fragment_count):
+                part_path = os.path.join(temp_dir, f"part{index}")
+                s3_download(
+                    f"{record.s3_prefix}.enc.part{index}", part_path
+                )
+                part_paths.append(part_path)
+
+            # Merge fragments
+            merge_files(part_paths, encrypted_path)
+
+            # Decrypt (HMAC + GCM verification happen inside)
+            decrypted_path = os.path.join(temp_dir, record.filename)
+            try:
+                decrypt_file(encrypted_path, decrypted_path)
+            except IntegrityError as exc:
+                audit.log_activity(
+                    email=email,
+                    action="Tampering Detected",
+                    filename=record.filename,
+                    status="Blocked",
+                )
+                alert_tampering(email, record.filename, str(exc))
+                return jsonify({
+                    "message": (
+                        "Integrity verification failed. "
+                        "Download blocked."
+                    )
+                }), 403
+
+            # SHA-256 verification against the stored digest
+            digest = sha256_file(decrypted_path)
+            if digest != record.sha256_hash:
+                audit.log_activity(
+                    email=email,
+                    action="Integrity Verification Failed",
+                    filename=record.filename,
+                    status="Blocked",
+                )
+                alert_tampering(
+                    email,
+                    record.filename,
+                    "SHA-256 mismatch",
+                )
+                return jsonify({
+                    "message": (
+                        "SHA-256 mismatch detected. "
+                        "Download blocked."
+                    )
+                }), 403
+
+            download_name = record.filename
+            file_size = record.file_size
+        else:
+            # ---------------- Legacy single-part download ----------------
+            legacy_key = (
+                filename
+                if filename.endswith(".enc")
+                else filename + ".enc"
+            )
+            encrypted_path = os.path.join(
+                temp_dir, os.path.basename(legacy_key)
+            )
+            s3_download(legacy_key, encrypted_path)
+            decrypted_path = decrypt_file(encrypted_path)
+            download_name = os.path.basename(legacy_key).replace(
+                ".enc", ""
+            )
+            file_size = os.path.getsize(decrypted_path)
+
+        user.risk_score += 2
+        db.session.commit()
+
+        audit.log_activity(
+            email=email,
+            action="File Downloaded",
+            filename=download_name,
+            status="Success",
+        )
+        alert_file_downloaded(
+            email,
+            download_name,
+            datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+        )
+
+        @after_this_request
+        def cleanup(response, _dir=temp_dir):
+            shutil.rmtree(_dir, ignore_errors=True)
+            return response
+
+        return send_file(
+            decrypted_path,
+            as_attachment=True,
+            download_name=download_name,
+        )
+
+    except IntegrityError as exc:
+        audit.log_activity(
+            email=email,
+            action="Tampering Detected",
+            filename=filename,
+            status="Blocked",
+        )
+        alert_tampering(email, filename, str(exc))
+        return jsonify({
+            "message": "Integrity verification failed. Download blocked."
+        }), 403
+
+    except Exception as exc:  # noqa: BLE001
+        audit.log_activity(
+            email=email,
+            action="Download Failed",
+            filename=filename,
+            status="Failed",
+        )
+        return jsonify({
+            "message": str(exc)
+        }), 500
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+# ============================================================
+# STEP-UP AUTHENTICATION
+# Sensitive operations (download / delete / password change)
+# require a fresh Email OTP before they are performed.
+# ============================================================
+
+@storage_bp.get("/verify_stepup")
+def verify_stepup_page():
+    if "email" not in session:
+        return redirect("/")
+
+    intent = request.args.get("intent", "")
+    pending = session.get("pending_stepup") or {}
+
+    if not intent:
+        intent = pending.get("intent", "")
+
+    email = (
+        request.args.get("email")
+        or pending.get("email")
+        or session.get("email", "")
+    )
+    filename = request.args.get("filename") or pending.get("filename", "")
+    file_id = request.args.get("file_id") or pending.get("file_id", "")
+
+    if intent not in ("download", "delete", "password"):
+        return redirect("/dashboard/" + session.get("email", ""))
+
+    return render_template(
+        "verify_otp.html",
+        email=email,
+        mode=f"stepup_{intent}",
+        filename=filename,
+        file_id=file_id,
+        otp_ttl_seconds=Config.OTP_TTL_SECONDS,
+        dev_mode=Config.DEV_MODE,
+    )
+
+
+# ============================================================
+# DELETE FILE (Step-Up OTP challenge, then verified delete)
+# ============================================================
+
+@storage_bp.post("/files/<int:file_id>/delete")
+@limiter.limit("10 per minute")
+def delete_file_request(file_id):
+    email = session.get("email")
+    if not email:
+        return jsonify({
+            "message": "Session Expired. Please login again."
+        }), 401
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({
+            "message": "User not found."
+        }), 404
+
+    if is_account_locked(user):
+        audit.log_activity(
+            email=email,
+            action="Delete Blocked",
+            status="Blocked",
+        )
+        return jsonify({
+            "message": "Account is locked."
+        }), 403
+
+    record = File.query.get(file_id)
+    if not record or record.email != email:
+        return jsonify({
+            "message": "File not found."
+        }), 404
+
+    # ---------------- Risk gate ----------------
+    blocked, reason = sensitive_operation_blocked(user)
+    if blocked:
+        lock_account(user)
+        db.session.commit()
+        audit.log_activity(
+            email=email,
+            action="High Risk Delete Blocked",
+            filename=record.filename,
+            status="Blocked",
+        )
+        alert_high_risk_operation(
+            email,
+            "delete",
+            record.filename,
+            user.risk_score,
+        )
+        return jsonify({
+            "message": reason,
+            "risk_score": user.risk_score,
+            "risk_level": get_risk_level(user.risk_score),
+        }), 403
+
+    # ---------------- Issue delete OTP ----------------
+    otp = issue_stepup_otp(user, "delete")
+    session["pending_stepup"] = {
+        "intent": "delete",
+        "email": email,
+        "filename": record.filename,
+        "file_id": file_id,
+    }
+    if Config.DEV_MODE:
+        session["stepup_otp_plaintext"] = otp
+    session.modified = True
+
+    send_delete_otp(email, otp, record.filename)
+
+    audit.log_activity(
+        email=email,
+        action="Delete OTP Sent",
+        filename=record.filename,
+        status="Success",
+    )
+
+    return jsonify({
+        "message": (
+            "An OTP was sent to authorize the deletion. "
+            "The file will be deleted only after verification."
+        ),
+        "delete_otp_required": True,
+        "email": email,
+        "filename": record.filename,
+        "file_id": file_id,
+        "otp_ttl_seconds": Config.OTP_TTL_SECONDS,
+    }), 202
+
+
+# ============================================================
+# VERIFY STEP-UP OTP (download / delete)
+# ============================================================
+
+@storage_bp.post("/verify_stepup_otp")
+@limiter.limit("5 per minute")
+def verify_stepup_otp():
+    data = request.get_json(silent=True) or {}
+
+    email = session.get("email", "")
+    pending = session.get("pending_stepup") or {}
+    intent = data.get("intent") or pending.get("intent", "")
+
+    if intent not in ("download", "delete"):
+        return jsonify({
+            "message": "No pending step-up verification found."
+        }), 400
+
+    if pending.get("intent") != intent:
+        return jsonify({
+            "message": (
+                "No pending step-up verification found. "
+                "Please start the operation again."
+            )
+        }), 400
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({
+            "message": "User not found."
+        }), 404
+
+    otp = str(data.get("otp", "")).strip()
+    filename = pending.get("filename", "")
+    file_id = pending.get("file_id")
+    action_prefix = "Download" if intent == "download" else "Delete"
+    operation = "download" if intent == "download" else "delete"
+
+    # ---------------- Expired OTP ----------------
+    if user.stepup_otp_expired(intent):
+        otp_new = issue_stepup_otp(user, intent)
+        if intent == "download":
+            send_download_otp(email, otp_new)
+        else:
+            send_delete_otp(email, otp_new, filename)
+        if Config.DEV_MODE:
+            session["stepup_otp_plaintext"] = otp_new
+        session.modified = True
+        audit.log_activity(
+            email=email,
+            action=f"{action_prefix} OTP Expired",
+            filename=filename,
+            status="Failed",
+        )
+        return jsonify({
+            "message": "The OTP expired. A new one was sent.",
+            "email": email,
+        }), 401
+
+    # ---------------- Wrong OTP ----------------
+    if not user.verify_stepup_otp(intent, otp):
+        user.increment_stepup_otp_attempts(intent)
+        db.session.commit()
+        attempts = user.stepup_otp_attempts(intent)
+        audit.log_activity(
+            email=email,
+            action=f"{action_prefix} OTP Verification Failed",
+            filename=filename,
+            status="Failed",
+        )
+        if attempts >= Config.OTP_MAX_ATTEMPTS:
+            otp_new = issue_stepup_otp(user, intent)
+            if intent == "download":
+                send_download_otp(email, otp_new)
+            else:
+                send_delete_otp(email, otp_new, filename)
+            if Config.DEV_MODE:
+                session["stepup_otp_plaintext"] = otp_new
+            session.modified = True
+            alert_multiple_otp_failures(email, operation)
+            return jsonify({
+                "message": (
+                    "Too many invalid attempts. A new OTP was sent to "
+                    "your email."
+                ),
+                "email": email,
+            }), 401
+        return jsonify({
+            "message": "Invalid or expired OTP.",
+            "remaining_attempts":
+                Config.OTP_MAX_ATTEMPTS - attempts,
+        }), 401
+
+    # ---------------- OTP verified ----------------
+    user.clear_stepup_otp(intent)
+    db.session.commit()
+
+    if intent == "download":
+        target = pending.get("filename", "")
+        session["download_authorized"] = target
+        session.pop("pending_stepup", None)
+        session.modified = True
+        audit.log_activity(
+            email=email,
+            action="Download OTP Verified",
+            filename=target,
+            status="Success",
+        )
+        return jsonify({
+            "message": "Download authorized. Starting download...",
+            "download_url": f"/download/{email}/{target}",
+        })
+
+    # ---------------- Delete verified: perform deletion ----------------
+    record = File.query.get(file_id) if file_id else None
+    if not record or record.email != email:
+        session.pop("pending_stepup", None)
+        session.modified = True
+        audit.log_activity(
+            email=email,
+            action="Delete Failed",
+            filename=filename,
+            status="Failed",
+        )
+        return jsonify({
+            "message": "File not found."
+        }), 404
+
+    for key in record.fragment_keys():
+        try:
+            s3_delete(key)
+        except Exception:  # noqa: BLE001
+            pass
+
+    deleted_name = record.filename
+    db.session.delete(record)
+    db.session.commit()
+
+    session.pop("pending_stepup", None)
+    session.modified = True
+
+    audit.log_activity(
+        email=email,
+        action="Delete OTP Verified",
+        filename=deleted_name,
+        status="Success",
+    )
+    audit.log_activity(
+        email=email,
+        action="File Deleted",
+        filename=deleted_name,
+        status="Success",
+    )
+    send_file_deleted(
+        email,
+        deleted_name,
+        datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+    )
+
+    return jsonify({
+        "message": "File deleted successfully.",
+        "deleted": True,
+        "filename": deleted_name,
+    })
+
+
+# ============================================================
+# RESEND STEP-UP OTP (download / delete / password)
+# ============================================================
+
+@storage_bp.post("/resend_stepup_otp")
+@limiter.limit("3 per minute")
+def resend_stepup_otp():
+    data = request.get_json(silent=True) or {}
+
+    email = session.get("email", "")
+    pending = session.get("pending_stepup") or {}
+    intent = data.get("intent") or pending.get("intent", "")
+
+    if not pending or pending.get("intent") != intent:
+        return jsonify({
+            "message": "No pending step-up verification found."
+        }), 400
+
+    if intent not in ("download", "delete", "password"):
+        return jsonify({
+            "message": "Invalid step-up intent."
+        }), 400
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({
+            "message": "User not found."
+        }), 404
+
+    if user.stepup_otp_resends(intent) >= Config.OTP_MAX_RESENDS:
+        audit.log_activity(
+            email=email,
+            action="Step-Up OTP Resend Blocked (Limit Reached)",
+            filename=pending.get("filename", ""),
+            status="Failed",
+        )
+        return jsonify({
+            "message": (
+                "Maximum resend attempts reached. Please start the "
+                "operation again to request a fresh OTP."
+            )
+        }), 429
+
+    otp = issue_stepup_otp(user, intent, reset_resends=False)
+    user.increment_stepup_otp_resends(intent)
+    db.session.commit()
+
+    filename = pending.get("filename", "")
+
+    if intent == "download":
+        send_download_otp(email, otp)
+        action = "Download OTP Resent"
+    elif intent == "delete":
+        send_delete_otp(email, otp, filename)
+        action = "Delete OTP Resent"
+    else:
+        from email_service import send_password_change_otp
+        send_password_change_otp(email, otp)
+        action = "Password Change OTP Resent"
+
+    if Config.DEV_MODE:
+        session["stepup_otp_plaintext"] = otp
+    session.modified = True
+
+    audit.log_activity(
+        email=email,
+        action=action,
+        filename=filename,
+        status="Success",
+    )
+
+    return jsonify({
+        "message": "A new OTP has been sent to your email.",
+        "otp_ttl_seconds": Config.OTP_TTL_SECONDS,
+    })

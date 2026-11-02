@@ -1,0 +1,515 @@
+import hashlib
+import hmac
+from datetime import datetime, timedelta
+
+from flask_bcrypt import Bcrypt
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import inspect, text
+
+db = SQLAlchemy()
+bcrypt = Bcrypt()
+
+
+# ============================================================
+# USER MODEL
+# ============================================================
+
+class User(db.Model):
+
+    __tablename__ = "user"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    email = db.Column(db.String(120), unique=True, nullable=False)
+
+    password = db.Column(db.String(200), nullable=False)
+
+    # ---------------- Security ----------------
+
+    risk_score = db.Column(db.Integer, default=0)
+
+    failed_attempts = db.Column(db.Integer, default=0)
+
+    account_locked = db.Column(db.Boolean, default=False)
+
+    lock_time = db.Column(db.DateTime, nullable=True)
+
+    # Locked until this timestamp (30 minutes by default).
+    locked_until = db.Column(db.DateTime, nullable=True)
+
+    # ---------------- MFA ----------------
+
+    otp = db.Column(db.String(64), nullable=True)
+
+    otp_expiry = db.Column(db.DateTime, nullable=True)
+
+    otp_created_at = db.Column(db.DateTime, nullable=True)
+
+    otp_attempts = db.Column(db.Integer, default=0)
+
+    otp_resends = db.Column(db.Integer, default=0)
+
+    mfa_enabled = db.Column(db.Boolean, default=True)
+
+    # ---------------- Account Unlock (email OTP) ----------------
+
+    unlock_otp = db.Column(db.String(64), nullable=True)
+
+    unlock_expiry = db.Column(db.DateTime, nullable=True)
+
+    unlock_otp_created_at = db.Column(db.DateTime, nullable=True)
+
+    unlock_otp_attempts = db.Column(db.Integer, default=0)
+
+    unlock_otp_resends = db.Column(db.Integer, default=0)
+
+    # ---------------- Step-Up OTP (sensitive operations) ----------------
+    # Every sensitive operation (Download / Delete / Password Change)
+    # requires its own Email OTP. Only the SHA-256 hash is stored.
+    # Each operation keeps independent attempts + resend counters.
+
+    download_otp_hash = db.Column(db.String(64), nullable=True)
+
+    download_otp_created_at = db.Column(db.DateTime, nullable=True)
+
+    download_otp_expiry = db.Column(db.DateTime, nullable=True)
+
+    download_otp_attempts = db.Column(db.Integer, default=0)
+
+    download_otp_resends = db.Column(db.Integer, default=0)
+
+    delete_otp_hash = db.Column(db.String(64), nullable=True)
+
+    delete_otp_created_at = db.Column(db.DateTime, nullable=True)
+
+    delete_otp_expiry = db.Column(db.DateTime, nullable=True)
+
+    delete_otp_attempts = db.Column(db.Integer, default=0)
+
+    delete_otp_resends = db.Column(db.Integer, default=0)
+
+    password_otp_hash = db.Column(db.String(64), nullable=True)
+
+    password_otp_created_at = db.Column(db.DateTime, nullable=True)
+
+    password_otp_expiry = db.Column(db.DateTime, nullable=True)
+
+    password_otp_attempts = db.Column(db.Integer, default=0)
+
+    password_otp_resends = db.Column(db.Integer, default=0)
+
+    # ---------------- Session Invalidation ----------------
+    # Incremented on password change. Any session whose recorded
+    # auth_version is older than this value is destroyed, which logs
+    # out ALL active sessions of the user.
+
+    auth_version = db.Column(db.Integer, default=0)
+
+    # ---------------- Email Verification ----------------
+
+    email_verified = db.Column(db.Boolean, default=False)
+
+    # ---------------- Zero Trust Context ----------------
+
+    last_login_ip = db.Column(db.String(50), nullable=True)
+
+    last_device = db.Column(db.String(300), nullable=True)
+
+    # ---------------- Roles ----------------
+
+    is_admin = db.Column(db.Boolean, default=False)
+
+    # ---------------- Dashboard Statistics ----------------
+
+    login_count = db.Column(db.Integer, default=0)
+
+    last_login = db.Column(db.DateTime, nullable=True)
+
+    last_logout = db.Column(db.DateTime, nullable=True)
+
+    password_changed_at = db.Column(db.DateTime, nullable=True)
+
+    # -------------------------------------------------------
+
+    def set_password(self, password):
+        self.password = bcrypt.generate_password_hash(
+            password
+        ).decode("utf-8")
+
+    def check_password(self, password):
+        return bcrypt.check_password_hash(
+            self.password,
+            password
+        )
+
+    def set_otp(self, otp_plain, ttl_seconds=300):
+        """Stores only the SHA-256 hash of the OTP, never plaintext."""
+        self.otp = hashlib.sha256(
+            otp_plain.encode("utf-8")
+        ).hexdigest()
+        self.otp_expiry = datetime.utcnow() + timedelta(
+            seconds=ttl_seconds
+        )
+
+    def verify_otp(self, otp_plain):
+        if not self.otp or not self.otp_expiry:
+            return False
+        if datetime.utcnow() > self.otp_expiry:
+            return False
+        candidate = hashlib.sha256(
+            otp_plain.encode("utf-8")
+        ).hexdigest()
+        return hmac.compare_digest(candidate, self.otp)
+
+    def otp_expired(self):
+        """True when a stored OTP exists but its expiry has passed."""
+        return (
+            self.otp is not None
+            and self.otp_expiry is not None
+            and datetime.utcnow() > self.otp_expiry
+        )
+
+    def clear_otp(self):
+        self.otp = None
+        self.otp_expiry = None
+        self.otp_created_at = None
+        self.otp_attempts = 0
+        self.otp_resends = 0
+
+    def set_unlock_otp(self, otp_plain, ttl_seconds=600):
+        """Stores only the SHA-256 hash of the unlock OTP."""
+        now = datetime.utcnow()
+        self.unlock_otp = hashlib.sha256(
+            otp_plain.encode("utf-8")
+        ).hexdigest()
+        self.unlock_otp_created_at = now
+        self.unlock_expiry = now + timedelta(
+            seconds=ttl_seconds
+        )
+        self.unlock_otp_attempts = 0
+
+    def verify_unlock_otp(self, otp_plain):
+        if not self.unlock_otp or not self.unlock_expiry:
+            return False
+        if datetime.utcnow() > self.unlock_expiry:
+            return False
+        candidate = hashlib.sha256(
+            otp_plain.encode("utf-8")
+        ).hexdigest()
+        return hmac.compare_digest(candidate, self.unlock_otp)
+
+    def unlock_otp_expired(self):
+        """True when a stored unlock OTP has passed its expiry."""
+        return (
+            self.unlock_otp is not None
+            and self.unlock_expiry is not None
+            and datetime.utcnow() > self.unlock_expiry
+        )
+
+    def clear_unlock_otp(self):
+        self.unlock_otp = None
+        self.unlock_expiry = None
+        self.unlock_otp_created_at = None
+        self.unlock_otp_attempts = 0
+        self.unlock_otp_resends = 0
+
+    # ---------------- Step-Up OTP (shared helpers) ----------------
+    # kind is one of: "download", "delete", "password".
+    # Plaintext OTP is never stored - only the SHA-256 hash.
+
+    def set_stepup_otp(self, kind, otp_plain, ttl_seconds=300):
+        """Stores a SHA-256 hashed OTP for a step-up operation.
+        Attempts are reset (fresh OTP = fresh attempts); the resend
+        counter is managed by the caller (see issue_stepup_otp)."""
+        now = datetime.utcnow()
+        setattr(self, f"{kind}_otp_hash", hashlib.sha256(
+            otp_plain.encode("utf-8")
+        ).hexdigest())
+        setattr(self, f"{kind}_otp_created_at", now)
+        setattr(self, f"{kind}_otp_expiry", now + timedelta(
+            seconds=ttl_seconds
+        ))
+        setattr(self, f"{kind}_otp_attempts", 0)
+
+    def verify_stepup_otp(self, kind, otp_plain):
+        otp_hash = getattr(self, f"{kind}_otp_hash", None)
+        expiry = getattr(self, f"{kind}_otp_expiry", None)
+        if not otp_hash or not expiry:
+            return False
+        if datetime.utcnow() > expiry:
+            return False
+        candidate = hashlib.sha256(
+            otp_plain.encode("utf-8")
+        ).hexdigest()
+        return hmac.compare_digest(candidate, otp_hash)
+
+    def stepup_otp_expired(self, kind):
+        """True when a stored step-up OTP has passed its expiry."""
+        otp_hash = getattr(self, f"{kind}_otp_hash", None)
+        expiry = getattr(self, f"{kind}_otp_expiry", None)
+        return (
+            otp_hash is not None
+            and expiry is not None
+            and datetime.utcnow() > expiry
+        )
+
+    def clear_stepup_otp(self, kind):
+        setattr(self, f"{kind}_otp_hash", None)
+        setattr(self, f"{kind}_otp_created_at", None)
+        setattr(self, f"{kind}_otp_expiry", None)
+        setattr(self, f"{kind}_otp_attempts", 0)
+        setattr(self, f"{kind}_otp_resends", 0)
+
+    def stepup_otp_attempts(self, kind):
+        return getattr(self, f"{kind}_otp_attempts", 0) or 0
+
+    def increment_stepup_otp_attempts(self, kind):
+        setattr(
+            self,
+            f"{kind}_otp_attempts",
+            (getattr(self, f"{kind}_otp_attempts", 0) or 0) + 1,
+        )
+
+    def stepup_otp_resends(self, kind):
+        return getattr(self, f"{kind}_otp_resends", 0) or 0
+
+    def increment_stepup_otp_resends(self, kind):
+        setattr(
+            self,
+            f"{kind}_otp_resends",
+            (getattr(self, f"{kind}_otp_resends", 0) or 0) + 1,
+        )
+
+    def bump_auth_version(self):
+        """Invalidates every active session for this user."""
+        self.auth_version = (self.auth_version or 0) + 1
+
+    def __repr__(self):
+        return f"<User {self.email}>"
+
+
+# ============================================================
+# FILE MODEL
+# Stores metadata for encrypted, fragmented cloud files.
+# ============================================================
+
+class File(db.Model):
+
+    __tablename__ = "file"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    email = db.Column(db.String(120), nullable=False, index=True)
+
+    filename = db.Column(db.String(255), nullable=False)
+
+    s3_prefix = db.Column(db.String(255), nullable=False, unique=True)
+
+    fragment_count = db.Column(db.Integer, default=1)
+
+    sha256_hash = db.Column(db.String(64), nullable=False)
+
+    file_size = db.Column(db.Integer, default=0)
+
+    file_type = db.Column(db.String(50), nullable=True)
+
+    upload_time = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    def fragment_keys(self):
+        return [
+            f"{self.s3_prefix}.enc.part{i}"
+            for i in range(self.fragment_count)
+        ]
+
+    def __repr__(self):
+        return f"<File {self.filename} by {self.email}>"
+
+
+# ============================================================
+# AUDIT LOG MODEL
+# Immutable hash-chained audit trail.
+# previous_hash + current_hash make tampering detectable.
+# ============================================================
+
+class AuditLog(db.Model):
+
+    __tablename__ = "audit_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer, nullable=True)
+
+    email = db.Column(db.String(120), nullable=False)
+
+    action = db.Column(db.String(100), nullable=False)
+
+    filename = db.Column(db.String(255), nullable=True)
+
+    file_type = db.Column(db.String(50), nullable=True)
+
+    file_size = db.Column(db.Integer, nullable=True)
+
+    ip_address = db.Column(db.String(50), nullable=False)
+
+    device = db.Column(db.String(300), nullable=True)
+
+    status = db.Column(
+        db.String(50),
+        default="Success"
+    )
+
+    risk_score = db.Column(
+        db.Integer,
+        default=0
+    )
+
+    risk_level = db.Column(
+        db.String(20),
+        default="Low"
+    )
+
+    timestamp = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    # ---------------- Hash Chain ----------------
+
+    previous_hash = db.Column(
+        db.String(64),
+        default="GENESIS",
+        nullable=False
+    )
+
+    current_hash = db.Column(
+        db.String(64),
+        default="",
+        nullable=False
+    )
+
+    def __repr__(self):
+        return (
+            f"<AuditLog "
+            f"{self.email} | "
+            f"{self.action} | "
+            f"{self.timestamp}>"
+        )
+
+
+# ============================================================
+# DATABASE MIGRATION
+# Upgrades an existing SQLite database with the new columns.
+# Idempotent - safe to run on every startup.
+# ============================================================
+
+def migrate_database():
+    """Adds missing columns/tables to an existing database."""
+
+    inspector = inspect(db.engine)
+    tables = set(inspector.get_table_names())
+
+    def add_column(table, column_sql):
+        with db.engine.begin() as conn:
+            conn.execute(
+                text(f"ALTER TABLE {table} ADD COLUMN {column_sql}")
+            )
+
+    # ---- User table ----
+    if "user" in tables:
+        user_cols = {
+            col["name"] for col in inspector.get_columns("user")
+        }
+        user_additions = {
+            "otp": "otp VARCHAR(64)",
+            "otp_expiry": "otp_expiry DATETIME",
+            "otp_created_at": "otp_created_at DATETIME",
+            "otp_attempts": "otp_attempts INTEGER DEFAULT 0",
+            "otp_resends": "otp_resends INTEGER DEFAULT 0",
+            "mfa_enabled": "mfa_enabled BOOLEAN DEFAULT 1",
+            # Existing users are treated as already verified.
+            "email_verified": "email_verified BOOLEAN DEFAULT 1",
+            "last_login_ip": "last_login_ip VARCHAR(50)",
+            "last_device": "last_device VARCHAR(300)",
+            "is_admin": "is_admin BOOLEAN DEFAULT 0",
+            "password_changed_at": "password_changed_at DATETIME",
+            "locked_until": "locked_until DATETIME",
+            "unlock_otp": "unlock_otp VARCHAR(64)",
+            "unlock_expiry": "unlock_expiry DATETIME",
+            "unlock_otp_created_at": "unlock_otp_created_at DATETIME",
+            "unlock_otp_attempts": "unlock_otp_attempts INTEGER DEFAULT 0",
+            "unlock_otp_resends": "unlock_otp_resends INTEGER DEFAULT 0",
+            "download_otp_hash": "download_otp_hash VARCHAR(64)",
+            "download_otp_created_at": "download_otp_created_at DATETIME",
+            "download_otp_expiry": "download_otp_expiry DATETIME",
+            "download_otp_attempts": "download_otp_attempts INTEGER DEFAULT 0",
+            "download_otp_resends": "download_otp_resends INTEGER DEFAULT 0",
+            "delete_otp_hash": "delete_otp_hash VARCHAR(64)",
+            "delete_otp_created_at": "delete_otp_created_at DATETIME",
+            "delete_otp_expiry": "delete_otp_expiry DATETIME",
+            "delete_otp_attempts": "delete_otp_attempts INTEGER DEFAULT 0",
+            "delete_otp_resends": "delete_otp_resends INTEGER DEFAULT 0",
+            "password_otp_hash": "password_otp_hash VARCHAR(64)",
+            "password_otp_created_at": "password_otp_created_at DATETIME",
+            "password_otp_expiry": "password_otp_expiry DATETIME",
+            "password_otp_attempts": "password_otp_attempts INTEGER DEFAULT 0",
+            "password_otp_resends": "password_otp_resends INTEGER DEFAULT 0",
+            "auth_version": "auth_version INTEGER DEFAULT 0",
+        }
+        for col, sql in user_additions.items():
+            if col not in user_cols:
+                add_column("user", sql)
+
+    # ---- AuditLog table ----
+    if "audit_log" in tables:
+        log_cols = {
+            col["name"] for col in inspector.get_columns("audit_log")
+        }
+        if "user_id" not in log_cols:
+            add_column(
+                "audit_log",
+                "user_id INTEGER",
+            )
+        if "previous_hash" not in log_cols:
+            add_column(
+                "audit_log",
+                "previous_hash VARCHAR(64) DEFAULT 'GENESIS'",
+            )
+        if "current_hash" not in log_cols:
+            add_column(
+                "audit_log",
+                "current_hash VARCHAR(64) DEFAULT ''",
+            )
+
+    # Create any missing tables (e.g. File)
+    db.create_all()
+
+    # ---- Backfill the audit hash chain for existing logs ----
+    logs = AuditLog.query.order_by(AuditLog.id.asc()).all()
+    prev = "GENESIS"
+    changed = False
+    for log in logs:
+        if not log.current_hash:
+            canonical = "|".join([
+                str(prev),
+                str(log.timestamp),
+                str(log.email),
+                str(log.action),
+                str(log.ip_address),
+                str(log.device),
+                str(log.status),
+                str(log.filename or ""),
+            ])
+            log.previous_hash = prev
+            log.current_hash = hashlib.sha256(
+                canonical.encode("utf-8")
+            ).hexdigest()
+            prev = log.current_hash
+            changed = True
+        else:
+            prev = log.current_hash
+
+    if changed:
+        db.session.commit()

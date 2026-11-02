@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Cloud Data Protection System</title>
+
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body class="login-page">
+
+<div class="login-container">
+
+    <!-- Left Panel -->
+    <div class="info-panel">
+
+        <h1>☁ Smart Cloud Data Protection System</h1>
+
+        <h3>Using Zero Trust Architecture</h3>
+
+        <p class="description">
+            Secure cloud file storage with AES-256-GCM encryption,
+            multi-factor authentication, risk based authentication,
+            AWS S3 cloud storage, and immutable audit logging.
+        </p>
+
+        <div class="feature-list">
+
+            <div class="feature-card">🔒 AES-256-GCM Encryption</div>
+
+            <div class="feature-card">🔑 Email OTP Multi-Factor Auth</div>
+
+            <div class="feature-card">☁ AWS S3 Cloud Storage</div>
+
+            <div class="feature-card">🛡 Zero Trust Security</div>
+
+            <div class="feature-card">⚖ Risk Based Authentication</div>
+
+            <div class="feature-card">📜 Hash-Chained Audit Logs</div>
+
+            <div class="feature-card">🧩 Encrypted File Fragmentation</div>
+
+            <div class="feature-card">⏱ IP Rate Limiting</div>
+
+        </div>
+
+    </div>
+
+    <!-- Right Panel -->
+
+    <div class="login-card">
+
+        <h2 id="formTitle">Login</h2>
+
+        <div class="toggle">
+
+            <button id="loginBtn" class="active" onclick="showLogin()">
+                Login
+            </button>
+
+            <button id="registerBtn" onclick="showRegister()">
+                Register
+            </button>
+
+        </div>
+
+        <input
+            id="email"
+            type="email"
+            placeholder="Email Address">
+
+        <input
+            id="password"
+            type="password"
+            placeholder="Password">
+
+        <div id="confirmSection" style="display:none">
+
+            <input
+                id="confirmPassword"
+                type="password"
+                placeholder="Confirm Password">
+
+        </div>
+
+        <button
+            class="primary-btn"
+            onclick="handleAction()">
+
+            Continue
+
+        </button>
+
+        <div id="unlockSection" style="display:none; margin-top:10px;">
+
+            <p style="color:#64748B; font-size:13px;">
+                Enter your email to receive an unlock OTP.
+            </p>
+
+            <button
+                class="upload-btn"
+                onclick="requestUnlock()">
+
+                Unlock Account
+
+            </button>
+
+        </div>
+
+        <p id="msg"></p>
+
+        <p style="margin-top:14px; font-size:13px;">
+            <a href="#"
+               id="unlockLink"
+               onclick="toggleUnlock(event)">
+               Forgot password? Or account locked?
+            </a>
+        </p>
+
+    </div>
+
+</div>
+
+<script>
+
+let mode = "login";
+
+function toggleUnlock(e) {
+
+    e.preventDefault();
+
+    const sec = document.getElementById("unlockSection");
+
+    const show = sec.style.display === "none";
+
+    sec.style.display = show ? "block" : "none";
+
+    document.getElementById("unlockLink").innerHTML = show
+        ? "Hide unlock option"
+        : "Forgot password? Or account locked?";
+
+}
+
+async function requestUnlock() {
+
+    const email = document.getElementById("email").value.trim();
+
+    const msg = document.getElementById("msg");
+
+    if (email === "") {
+
+        msg.innerHTML = "Enter your email first.";
+
+        return;
+
+    }
+
+    msg.innerHTML = "Requesting unlock OTP...";
+
+    try {
+
+        const res = await fetch("/unlock", {
+
+            method: "POST",
+
+            headers: { "Content-Type": "application/json" },
+
+            body: JSON.stringify({ email: email })
+
+        });
+
+        const data = await res.json();
+
+        if (data.unlock_required) {
+
+            window.location.href =
+
+                "/verify_otp?mode=unlock&email=" +
+
+                encodeURIComponent(data.email);
+
+        } else {
+
+            msg.innerHTML = data.message;
+
+        }
+
+    } catch (err) {
+
+        console.log(err);
+
+        msg.innerHTML = "Failed to request unlock.";
+
+    }
+
+}
+
+function showLogin(){
+
+    mode = "login";
+
+    document.getElementById("formTitle").innerHTML = "Login";
+
+    document.getElementById("confirmSection").style.display = "none";
+
+    document.getElementById("loginBtn").classList.add("active");
+
+    document.getElementById("registerBtn").classList.remove("active");
+
+    document.getElementById("msg").innerHTML = "";
+
+}
+
+function showRegister(){
+
+    mode = "register";
+
+    document.getElementById("formTitle").innerHTML = "Register";
+
+    document.getElementById("confirmSection").style.display = "block";
+
+    document.getElementById("registerBtn").classList.add("active");
+
+    document.getElementById("loginBtn").classList.remove("active");
+
+    document.getElementById("msg").innerHTML = "";
+
+}
+
+async function handleAction(){
+
+    const email = document.getElementById("email").value.trim();
+
+    const password = document.getElementById("password").value;
+
+    const msg = document.getElementById("msg");
+
+    if(email === "" || password === ""){
+
+        msg.innerHTML = "Please enter email and password.";
+
+        return;
+
+    }
+
+    msg.innerHTML = "Processing...";
+
+    if(mode === "login"){
+
+        const res = await fetch("/login",{
+
+            method:"POST",
+
+            headers:{
+                "Content-Type":"application/json"
+            },
+
+            body:JSON.stringify({
+                email:email,
+                password:password
+            })
+
+        });
+
+        const data = await res.json();
+
+        msg.innerHTML = data.message;
+
+        if(res.ok){
+
+            window.location.href =
+                "/dashboard/" + encodeURIComponent(data.email);
+
+        } else if(data.unlock_required){
+
+            window.location.href =
+                "/verify_otp?mode=unlock&email=" +
+                encodeURIComponent(data.email);
+
+        } else if(data.otp_required){
+
+            window.location.href =
+                "/verify_otp?mode=login&email=" +
+                encodeURIComponent(data.email);
+
+        } else if(data.verification_required){
+
+            window.location.href =
+                "/verify_otp?mode=register&email=" +
+                encodeURIComponent(data.email);
+
+        } else if(res.status === 429){
+
+            msg.innerHTML = data.message || "Too many attempts. Try again later.";
+
+        }
+
+    }
+
+    else{
+
+        const confirmPassword =
+            document.getElementById("confirmPassword").value;
+
+        if(password !== confirmPassword){
+
+            msg.innerHTML = "Passwords do not match.";
+
+            return;
+
+        }
+
+        if(password.length < 8){
+
+            msg.innerHTML = "Password must be at least 8 characters.";
+
+            return;
+
+        }
+
+        const res = await fetch("/register",{
+
+            method:"POST",
+
+            headers:{
+                "Content-Type":"application/json"
+            },
+
+            body:JSON.stringify({
+                email:email,
+                password:password
+            })
+
+        });
+
+        const data = await res.json();
+
+        msg.innerHTML = data.message;
+
+        if(res.ok){
+
+            // Step 2: first-time email verification
+            window.location.href =
+                "/verify_otp?mode=register&email=" +
+                encodeURIComponent(data.email);
+
+        } else if(res.status === 429){
+
+            msg.innerHTML = data.message || "Too many registrations. Try again later.";
+
+        }
+
+    }
+
+}
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Dashboard | Smart Cloud Data Protection System</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <!-- ===================================================== -->
+    <!-- Dashboard Header -->
+    <!-- ===================================================== -->
+
+    <div class="dashboard-header">
+
+        <div>
+
+            <h1 class="dashboard-title">
+                Smart Cloud Data Protection System
+            </h1>
+
+            <p class="dashboard-subtitle">
+                Zero Trust Architecture | AWS S3 | AES-256-GCM | MFA
+            </p>
+
+        </div>
+
+        <div class="header-actions">
+
+            {% if is_admin %}
+
+            <button
+                class="admin-btn"
+                onclick="location.href='/admin'">
+
+                Admin Panel
+
+            </button>
+
+            {% endif %}
+
+            <button
+                onclick="location.href='/change_password'">
+
+                Change Password
+
+            </button>
+
+            <button
+                class="danger"
+                onclick="location.href='/logout'">
+
+                Logout
+
+            </button>
+
+        </div>
+
+    </div>
+
+
+    <!-- ===================================================== -->
+    <!-- Locked Account -->
+    <!-- ===================================================== -->
+
+    {% if locked %}
+
+    <div class="card locked-box">
+
+        <h2 style="color:red;">
+            🔒 Your Account is Locked
+        </h2>
+
+        <p>
+            Your account has been locked because of multiple failed login
+            attempts.
+        </p>
+
+        <p>
+            Upload and Download operations are disabled until your account
+            is automatically unlocked.
+        </p>
+
+    </div>
+
+    {% endif %}
+
+
+    <!-- ===================================================== -->
+    <!-- User Information -->
+    <!-- ===================================================== -->
+
+    <div class="card">
+
+        <h2>User Information</h2>
+
+        <div class="user-info">
+
+            <div>
+
+                <strong>Email</strong>
+
+                <p class="user-email">
+                    {{ email }}
+                </p>
+
+            </div>
+
+            <div>
+
+                <strong>Risk Score</strong>
+
+                <div class="risk-score">
+
+                    {{ risk }}%
+
+                </div>
+
+            </div>
+
+            <div>
+
+                <strong>Risk Level</strong>
+
+                <h3>
+
+                    {% if risk_level == "High" %}
+
+                        🔴 High
+
+                    {% elif risk_level == "Medium" %}
+
+                        🟡 Medium
+
+                    {% else %}
+
+                        🟢 Low
+
+                    {% endif %}
+
+                </h3>
+
+            </div>
+
+        </div>
+
+
+        <div class="progress">
+
+            <div
+                class="progress-bar"
+                id="riskBar">
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ===================================================== -->
+    <!-- Statistics -->
+    <!-- ===================================================== -->
+
+    <div class="security-grid">
+
+        <div class="security-box">
+
+            <div class="security-icon">👤</div>
+
+            <div class="security-title">
+
+                Login Count
+
+            </div>
+
+            <div class="security-value">
+
+                {{ login_count }}
+
+            </div>
+
+        </div>
+
+        <div class="security-box">
+
+            <div class="security-icon">📅</div>
+
+            <div class="security-title">
+
+                Last Login
+
+            </div>
+
+            <div class="security-value">
+
+                {% if last_login %}
+
+                    {{ last_login|to_ist }}
+
+                {% else %}
+
+                    Never
+
+                {% endif %}
+
+            </div>
+
+        </div>
+
+        <div class="security-box">
+
+            <div class="security-icon">⬆️</div>
+
+            <div class="security-title">
+
+                Uploads
+
+            </div>
+
+            <div class="security-value">
+
+                {{ total_uploads }}
+
+            </div>
+
+        </div>
+
+        <div class="security-box">
+
+            <div class="security-icon">⬇️</div>
+
+            <div class="security-title">
+
+                Downloads
+
+            </div>
+
+            <div class="security-value">
+
+                {{ total_downloads }}
+
+            </div>
+
+        </div>
+
+        <div class="security-box">
+
+            <div class="security-icon">🗂️</div>
+
+            <div class="security-title">
+
+                Secure Files
+
+            </div>
+
+            <div class="security-value">
+
+                {{ total_files }}
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- ===================================================== -->
+    <!-- Upload -->
+    <!-- ===================================================== -->
+
+    <div class="card">
+
+        <h2>Upload Secure File</h2>
+
+        {% if locked %}
+
+        <p style="color:red;">
+            Upload is disabled because your account is locked.
+        </p>
+
+        {% else %}
+
+        <div class="upload-box">
+
+            <input
+                type="file"
+                id="file">
+
+            <button
+                class="upload-btn"
+                onclick="upload()">
+
+                Upload
+
+            </button>
+
+        </div>
+
+        <p class="upload-hint">
+            Files are SHA-256 hashed, encrypted with a unique AES-256-GCM
+            key, and split into encrypted fragments before being stored
+            in AWS S3.
+        </p>
+
+        {% endif %}
+
+    </div>
+
+
+    <!-- ===================================================== -->
+    <!-- Cloud Storage -->
+    <!-- ===================================================== -->
+
+    <div class="card">
+
+        <h2>Cloud Storage</h2>
+
+        <ul
+            class="file-list"
+            id="files">
+
+        </ul>
+
+    </div>
+
+
+    <!-- ===================================================== -->
+    <!-- Recent Activities -->
+    <!-- ===================================================== -->
+
+    <div class="card">
+
+        <h2>Recent Activities</h2>
+
+        <table class="audit-table">
+
+            <tr>
+
+                <th>Action</th>
+
+                <th>File</th>
+
+                <th>Status</th>
+
+                <th>Time</th>
+
+            </tr>
+
+            {% for log in recent_logs %}
+
+            <tr>
+
+                <td>{{ log.action }}</td>
+
+                <td>
+
+                    {% if log.filename %}
+
+                        {{ log.filename }}
+
+                    {% else %}
+
+                        -
+
+                    {% endif %}
+
+                </td>
+
+                <td>{{ log.status }}</td>
+
+                <td>{{ log.timestamp|to_ist }}</td>
+
+            </tr>
+
+            {% endfor %}
+
+        </table>
+
+    </div>
+
+
+    <!-- ===================================================== -->
+    <!-- Security Status -->
+    <!-- ===================================================== -->
+
+    <div class="security-grid">
+
+        <div class="security-box">
+
+            <div class="security-icon">☁️</div>
+
+            <div class="security-title">
+
+                Cloud
+
+            </div>
+
+            <div class="security-value">
+
+                AWS S3 Connected
+
+            </div>
+
+        </div>
+
+        <div class="security-box">
+
+            <div class="security-icon">🔐</div>
+
+            <div class="security-title">
+
+                Encryption
+
+            </div>
+
+            <div class="security-value">
+
+                AES-256-GCM
+
+            </div>
+
+        </div>
+
+        <div class="security-box">
+
+            <div class="security-icon">🔑</div>
+
+            <div class="security-title">
+
+                MFA
+
+            </div>
+
+            <div class="security-value">
+
+                Email OTP Enabled
+
+            </div>
+
+        </div>
+
+        <div class="security-box">
+
+            <div class="security-icon">🧩</div>
+
+            <div class="security-title">
+
+                Fragmentation
+
+            </div>
+
+            <div class="security-value">
+
+                Active
+
+            </div>
+
+        </div>
+
+        <div class="security-box">
+
+            <div class="security-icon">🛡️</div>
+
+            <div class="security-title">
+
+                Zero Trust
+
+            </div>
+
+            <div class="security-value">
+
+                Active
+
+            </div>
+
+        </div>
+
+        <div class="security-box">
+
+            <div class="security-icon">📋</div>
+
+            <div class="security-title">
+
+                Audit Logs
+
+            </div>
+
+            <div class="security-value">
+
+                <button
+                    onclick="location.href='/audit_logs'">
+
+                    View Logs
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ===================================================== -->
+    <!-- Footer -->
+    <!-- ===================================================== -->
+
+    <div class="footer">
+
+        Smart Cloud Data Protection System
+
+        <br>
+
+        Zero Trust Architecture
+
+        <br>
+
+        AWS S3 + AES-256-GCM + MFA
+
+    </div>
+
+</div>
+
+<script>
+
+const USER_EMAIL = "{{ email }}";
+const USER_RISK = Number("{{ risk }}") || 0;
+
+document.getElementById("riskBar").style.width = Math.min(USER_RISK, 100) + "%";
+
+async function upload() {
+
+    const file = document.getElementById("file").files[0];
+
+    if (!file) {
+
+        alert("Please select a file.");
+        return;
+
+    }
+
+    const fd = new FormData();
+
+    fd.append("file", file);
+
+    try {
+
+        const res = await fetch("/upload", {
+
+            method: "POST",
+            body: fd
+
+        });
+
+        const data = await res.json();
+
+        alert(data.message);
+
+        if (res.ok) {
+
+            loadFiles();
+            location.reload();
+
+        }
+
+    }
+
+    catch (err) {
+
+        console.log(err);
+
+        alert("Upload Failed");
+
+    }
+
+}
+
+async function loadFiles() {
+
+    const list = document.getElementById("files");
+
+    list.innerHTML = "";
+
+    try {
+
+        const res = await fetch("/files/" + USER_EMAIL);
+
+        const files = await res.json();
+
+        if (!Array.isArray(files) || files.length === 0) {
+
+            list.innerHTML = "<li>No files uploaded.</li>";
+
+            return;
+
+        }
+
+        files.forEach(file => {
+
+            const sha = file.sha256 && file.sha256 !== "-"
+                ? file.sha256.substring(0, 16) + "…"
+                : "N/A";
+
+            const deleteBtn = (file.id)
+                ? `<button
+                        class="delete-btn"
+                        onclick="deleteFile(${file.id}, '${file.filename}')">
+                        Delete
+                    </button>`
+                : "";
+
+            list.innerHTML += `
+
+                <li>
+
+                    <div>
+
+                        <strong>📄 ${file.filename}</strong>
+
+                        <br>
+
+                        Size : ${file.size} Bytes
+
+                        <br>
+
+                        ${file.last_modified}
+
+                        <br>
+
+                        <small>
+
+                            Fragments : ${file.fragments} |
+                            SHA-256 : ${sha}
+
+                        </small>
+
+                    </div>
+
+                    <div class="file-actions">
+
+                        <button
+                            class="download-btn"
+                            onclick="download('${file.filename}')">
+
+                            Download
+
+                        </button>
+
+                        ${deleteBtn}
+
+                    </div>
+
+                </li>
+
+            `;
+
+        });
+
+    }
+
+    catch (err) {
+
+        console.log(err);
+
+    }
+
+}
+
+
+async function download(filename) {
+
+    const url = "/download/" + USER_EMAIL + "/" + encodeURIComponent(filename);
+
+    try {
+
+        const res = await fetch(url);
+
+        // Step-Up OTP required for this download.
+        if (res.status === 202) {
+
+            const data = await res.json();
+
+            if (data.download_otp_required) {
+
+                window.location.href =
+
+                    "/verify_stepup?intent=download&email=" +
+
+                    encodeURIComponent(data.email) +
+
+                    "&filename=" +
+
+                    encodeURIComponent(data.filename);
+
+                return;
+
+            }
+
+        }
+
+    } catch (err) {
+
+        console.log(err);
+
+    }
+
+    // Authorized (or non-JSON response) - start the real download.
+    window.location = url;
+
+}
+
+async function deleteFile(id, filename) {
+
+    if (!confirm("Permanently delete '" + filename + "'? Deletion is irreversible.")) {
+
+        return;
+
+    }
+
+    try {
+
+        const res = await fetch("/files/" + id + "/delete", {
+
+            method: "POST"
+
+        });
+
+        const data = await res.json();
+
+        if (data.delete_otp_required) {
+
+            window.location.href =
+
+                "/verify_stepup?intent=delete&email=" +
+
+                encodeURIComponent(data.email) +
+
+                "&filename=" +
+
+                encodeURIComponent(data.filename) +
+
+                "&file_id=" +
+
+                encodeURIComponent(data.file_id);
+
+            return;
+
+        }
+
+        alert(data.message || "Delete failed.");
+
+        if (res.ok) {
+
+            loadFiles();
+
+        }
+
+    } catch (err) {
+
+        console.log(err);
+
+        alert("Delete Failed");
+
+    }
+
+}
+
+
+window.onload = function () {
+
+    loadFiles();
+
+};
+
+</script>
+
+</body>
+
+</html>

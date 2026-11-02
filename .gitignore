@@ -1,0 +1,30 @@
+# ============================================================
+# Smart Cloud Data Protection System - .gitignore
+# ============================================================
+
+# Secrets - never commit
+.env
+
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Local database
+instance/
+*.db
+
+# Local uploads / temp files
+uploads/
+keys/
+
+# Local storage fallback "bucket" (used when STORAGE_BACKEND=local)
+local_bucket/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

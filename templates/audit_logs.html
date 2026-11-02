@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
+
+<title>Audit Logs</title>
+
+<link rel="stylesheet"
+      href="/static/style.css">
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="dashboard-header">
+
+        <div>
+
+            <h1 class="dashboard-title">
+                Audit Logs
+            </h1>
+
+            <p class="dashboard-subtitle">
+
+                Immutable Hash-Chained Activity Monitoring
+
+            </p>
+
+        </div>
+
+        <div class="header-actions">
+
+            {% if is_admin %}
+
+            <button
+                class="admin-btn"
+                onclick="location.href='/admin'">
+
+                Admin Panel
+
+            </button>
+
+            {% endif %}
+
+            <button
+                onclick="location.href='/dashboard/{{ email }}'">
+
+                Dashboard
+
+            </button>
+
+        </div>
+
+    </div>
+
+
+    <!-- ================================================= -->
+
+    <div class="card">
+
+        <h2>User Information</h2>
+
+        <p>
+
+            <strong>Email :</strong>
+
+            {{ email }}
+
+        </p>
+
+        <p>
+
+            <strong>Current Risk Score :</strong>
+
+            {{ risk }}
+
+        </p>
+
+        <p>
+
+            <strong>Risk Level :</strong>
+
+            {{ risk_level }}
+
+        </p>
+
+        <p>
+
+            <strong>Total Logins :</strong>
+
+            {{ login_count }}
+
+        </p>
+
+    </div>
+
+
+    <!-- ================================================= -->
+
+    <div class="card">
+
+        <h2>Audit Trail (Hash-Chained)</h2>
+
+        <p class="hash-note">
+
+            Every entry stores a SHA-256 hash of the previous entry,
+
+            forming an immutable chain. Any tampering breaks every
+
+            subsequent hash and is immediately detectable.
+
+        </p>
+
+        <div class="table-container">
+
+        <table class="audit-table">
+
+            <thead>
+
+            <tr>
+
+                <th>ID</th>
+
+                <th>Action</th>
+
+                <th>File</th>
+
+                <th>Type</th>
+
+                <th>Size</th>
+
+                <th>IP Address</th>
+
+                <th>Device</th>
+
+                <th>Status</th>
+
+                <th>Risk Score</th>
+
+                <th>Risk Level</th>
+
+                <th>Previous Hash</th>
+
+                <th>Current Hash</th>
+
+                <th>Date & Time</th>
+
+            </tr>
+
+            </thead>
+
+            <tbody>
+
+            {% for log in logs %}
+
+            <tr>
+
+                <td>{{ log.id }}</td>
+
+                <td>{{ log.action }}</td>
+
+                <td>
+
+                    {% if log.filename %}
+
+                        {{ log.filename }}
+
+                    {% else %}
+
+                        -
+
+                    {% endif %}
+
+                </td>
+
+                <td>
+
+                    {% if log.file_type %}
+
+                        {{ log.file_type }}
+
+                    {% else %}
+
+                        -
+
+                    {% endif %}
+
+                </td>
+
+                <td>
+
+                    {% if log.file_size %}
+
+                        {{ log.file_size }} Bytes
+
+                    {% else %}
+
+                        -
+
+                    {% endif %}
+
+                </td>
+
+                <td>{{ log.ip_address }}</td>
+
+                <td>{{ log.device }}</td>
+
+                <td>
+
+                    {% if log.status=="Success" %}
+
+                        🟢 Success
+
+                    {% elif log.status=="Blocked" %}
+
+                        🔴 Blocked
+
+                    {% else %}
+
+                        🟡 Failed
+
+                    {% endif %}
+
+                </td>
+
+                <td>
+
+                    {{ log.risk_score }}
+
+                </td>
+
+                <td>
+
+                    {% if log.risk_level=="High" %}
+
+                        🔴 High
+
+                    {% elif log.risk_level=="Medium" %}
+
+                        🟡 Medium
+
+                    {% else %}
+
+                        🟢 Low
+
+                    {% endif %}
+
+                </td>
+
+                <td class="hash-cell">
+
+                    {{ log.previous_hash[:16] }}…
+
+                </td>
+
+                <td class="hash-cell">
+
+                    {{ log.current_hash[:16] }}…
+
+                </td>
+
+                <td>
+
+                    {{ log.timestamp|to_ist }}
+
+                </td>
+
+            </tr>
+
+            {% endfor %}
+
+            </tbody>
+
+        </table>
+
+        </div>
+
+    </div>
+
+
+    <div class="footer">
+
+        Smart Cloud Data Protection System
+
+        <br>
+
+        Zero Trust Architecture
+
+        <br>
+
+        AWS S3 + AES-256-GCM + Hash-Chained Audit Logs
+
+    </div>
+
+</div>
+
+</body>
+
+</html>

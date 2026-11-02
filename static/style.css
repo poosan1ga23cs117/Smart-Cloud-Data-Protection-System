@@ -1,0 +1,1565 @@
+/* ===================================================
+   SMART CLOUD DATA PROTECTION SYSTEM
+   ZERO TRUST UI
+   FINAL STYLE.CSS
+===================================================*/
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+}
+
+body{
+
+    font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+
+    background:#0F172A;
+
+    color:#F8FAFC;
+
+    min-height:100vh;
+}
+
+a{
+
+    text-decoration:none;
+
+    color:inherit;
+}
+
+button{
+
+    cursor:pointer;
+
+    transition:.3s;
+}
+
+input{
+
+    outline:none;
+}
+
+/*==========================
+LOGIN PAGE
+==========================*/
+
+.login-page{
+
+    display:flex;
+
+    justify-content:center;
+
+    align-items:center;
+
+    min-height:100vh;
+
+    padding:40px;
+}
+
+.login-container{
+
+    width:1200px;
+
+    max-width:100%;
+
+    display:grid;
+
+    grid-template-columns:1.2fr 1fr;
+
+    background:#1E293B;
+
+    border-radius:20px;
+
+    overflow:hidden;
+
+    box-shadow:0 20px 40px rgba(0,0,0,.35);
+}
+
+.info-panel{
+
+    padding:60px;
+
+    background:linear-gradient(135deg,#0F172A,#1E293B);
+}
+
+.info-panel h1{
+
+    font-size:38px;
+
+    color:#22D3EE;
+
+    margin-bottom:15px;
+}
+
+.info-panel h3{
+
+    color:#CBD5E1;
+
+    margin-bottom:25px;
+
+    font-weight:400;
+}
+
+.description{
+
+    color:#94A3B8;
+
+    line-height:1.8;
+
+    margin-bottom:40px;
+}
+
+.feature-list{
+
+    display:grid;
+
+    grid-template-columns:1fr 1fr;
+
+    gap:20px;
+}
+
+.feature-card{
+
+    background:#273549;
+
+    padding:18px;
+
+    border-radius:12px;
+
+    border-left:4px solid #22D3EE;
+
+    color:#E2E8F0;
+
+    font-size:15px;
+}
+/*==========================
+LOGIN CARD
+==========================*/
+
+.login-card{
+
+    background:#F8FAFC;
+
+    color:#1E293B;
+
+    padding:60px;
+
+    display:flex;
+
+    flex-direction:column;
+
+    justify-content:center;
+}
+
+.login-card h2{
+
+    text-align:center;
+
+    margin-bottom:30px;
+
+    color:#0F172A;
+
+    font-size:30px;
+}
+
+.toggle{
+
+    display:flex;
+
+    background:#E2E8F0;
+
+    border-radius:10px;
+
+    overflow:hidden;
+
+    margin-bottom:30px;
+}
+
+.toggle button{
+
+    flex:1;
+
+    padding:14px;
+
+    border:none;
+
+    background:transparent;
+
+    font-size:16px;
+
+    font-weight:600;
+
+    color:#475569;
+}
+
+.toggle button.active{
+
+    background:#06B6D4;
+
+    color:white;
+}
+
+.login-card input{
+
+    width:100%;
+
+    padding:15px;
+
+    margin-bottom:18px;
+
+    border-radius:10px;
+
+    border:1px solid #CBD5E1;
+
+    font-size:15px;
+
+    transition:.3s;
+}
+
+.login-card input:focus{
+
+    border-color:#06B6D4;
+
+    box-shadow:0 0 8px rgba(6,182,212,.25);
+}
+
+.primary-btn{
+
+    width:100%;
+
+    padding:15px;
+
+    border:none;
+
+    border-radius:10px;
+
+    background:#06B6D4;
+
+    color:white;
+
+    font-size:16px;
+
+    font-weight:bold;
+
+    margin-top:10px;
+}
+
+.primary-btn:hover{
+
+    background:#0891B2;
+}
+
+#msg{
+
+    margin-top:20px;
+
+    text-align:center;
+
+    font-weight:600;
+
+    color:#2563EB;
+
+    min-height:24px;
+}
+
+/*==========================
+COMMON CONTAINER
+==========================*/
+
+.container{
+
+    width:92%;
+
+    max-width:1200px;
+
+    margin:auto;
+
+    padding:40px 20px;
+}
+
+h1{
+
+    color:#22D3EE;
+
+    margin-bottom:25px;
+
+    font-size:34px;
+
+    font-weight:700;
+}
+
+h2{
+
+    color:#22D3EE;
+
+    margin-bottom:18px;
+}
+
+.card{
+
+    background:#1E293B;
+
+    border-radius:16px;
+
+    padding:25px;
+
+    margin-bottom:25px;
+
+    border:1px solid #334155;
+}
+
+/*==========================
+BUTTONS
+==========================*/
+
+button{
+
+    background:#06B6D4;
+
+    color:white;
+
+    border:none;
+
+    padding:12px 22px;
+
+    border-radius:8px;
+
+    font-size:15px;
+
+    font-weight:600;
+}
+
+button:hover{
+
+    background:#0891B2;
+}
+
+.download{
+
+    background:#22C55E;
+}
+
+.download:hover{
+
+    background:#16A34A;
+}
+
+.danger{
+
+    background:#EF4444;
+}
+
+.danger:hover{
+
+    background:#DC2626;
+}
+/*==================================================
+DASHBOARD
+==================================================*/
+
+.dashboard-header{
+
+    display:flex;
+
+    justify-content:space-between;
+
+    align-items:center;
+
+    margin-bottom:30px;
+
+    flex-wrap:wrap;
+
+    gap:15px;
+}
+
+.dashboard-title{
+
+    color:#22D3EE;
+
+    font-size:32px;
+
+    font-weight:700;
+}
+
+.dashboard-subtitle{
+
+    color:#94A3B8;
+
+    margin-top:6px;
+}
+
+/*==================================================
+STATUS CARDS
+==================================================*/
+
+.status-grid{
+
+    display:grid;
+
+    grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+
+    gap:20px;
+
+    margin-bottom:30px;
+}
+
+.status-card{
+
+    background:#1E293B;
+
+    border:1px solid #334155;
+
+    border-radius:15px;
+
+    padding:25px;
+
+    transition:.3s;
+}
+
+.status-card:hover{
+
+    transform:translateY(-4px);
+
+    border-color:#22D3EE;
+}
+
+.status-title{
+
+    color:#94A3B8;
+
+    font-size:14px;
+
+    margin-bottom:12px;
+
+    text-transform:uppercase;
+
+    letter-spacing:1px;
+}
+
+.status-value{
+
+    color:#F8FAFC;
+
+    font-size:24px;
+
+    font-weight:bold;
+}
+
+.status-success{
+
+    color:#22C55E;
+}
+
+.status-warning{
+
+    color:#F59E0B;
+}
+
+.status-danger{
+
+    color:#EF4444;
+}
+
+/*==================================================
+USER INFO
+==================================================*/
+
+.user-info{
+
+    display:flex;
+
+    justify-content:space-between;
+
+    align-items:center;
+
+    flex-wrap:wrap;
+
+    gap:20px;
+}
+
+.user-email{
+
+    font-size:18px;
+
+    color:#F8FAFC;
+
+    font-weight:600;
+}
+
+.risk-score{
+
+    font-size:26px;
+
+    color:#F59E0B;
+
+    font-weight:bold;
+}
+
+/*==================================================
+RISK BAR
+==================================================*/
+
+.progress{
+
+    width:100%;
+
+    height:12px;
+
+    background:#334155;
+
+    border-radius:50px;
+
+    overflow:hidden;
+
+    margin-top:15px;
+}
+
+.progress-bar{
+
+    height:100%;
+
+    width:30%;
+
+    background:#06B6D4;
+
+    border-radius:50px;
+
+    transition:.5s;
+}
+
+/*==================================================
+UPLOAD CARD
+==================================================*/
+
+.upload-box{
+
+    display:flex;
+
+    gap:15px;
+
+    align-items:center;
+
+    flex-wrap:wrap;
+}
+
+.upload-box input[type=file]{
+
+    flex:1;
+
+    min-width:250px;
+
+    padding:12px;
+
+    border:1px solid #475569;
+
+    border-radius:10px;
+
+    background:#0F172A;
+
+    color:white;
+}
+
+.upload-btn{
+
+    background:#06B6D4;
+}
+
+.upload-btn:hover{
+
+    background:#0891B2;
+}
+
+/*==================================================
+FILES
+==================================================*/
+
+.file-list{
+
+    list-style:none;
+
+    margin-top:10px;
+}
+
+.file-list li{
+
+    display:flex;
+
+    justify-content:space-between;
+
+    align-items:center;
+
+    background:#273549;
+
+    border-radius:10px;
+
+    padding:15px;
+
+    margin-bottom:12px;
+
+    border:1px solid #334155;
+}
+
+.file-name{
+
+    color:#E2E8F0;
+
+    font-weight:500;
+
+    word-break:break-all;
+}
+
+.download-btn{
+
+    background:#22C55E;
+
+    padding:10px 18px;
+}
+
+.download-btn:hover{
+
+    background:#16A34A;
+}
+
+.file-actions{
+
+    display:flex;
+
+    gap:10px;
+
+    align-items:center;
+
+    margin-left:15px;
+}
+
+.delete-btn{
+
+    background:#EF4444;
+
+    padding:10px 18px;
+}
+
+.delete-btn:hover{
+
+    background:#DC2626;
+}
+
+/*==================================================
+SECURITY STATUS
+==================================================*/
+
+.security-grid{
+
+    display:grid;
+
+    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+
+    gap:20px;
+
+    margin-top:30px;
+}
+
+.security-box{
+
+    background:#1E293B;
+
+    border-radius:15px;
+
+    border:1px solid #334155;
+
+    padding:22px;
+
+    text-align:center;
+}
+
+.security-icon{
+
+    font-size:34px;
+
+    margin-bottom:10px;
+}
+
+.security-title{
+
+    color:#94A3B8;
+
+    margin-bottom:8px;
+}
+
+.security-value{
+
+    color:#22C55E;
+
+    font-weight:bold;
+
+    font-size:18px;
+}
+
+/*==================================================
+FOOTER
+==================================================*/
+
+.footer{
+
+    margin-top:40px;
+
+    padding:25px;
+
+    text-align:center;
+
+    color:#94A3B8;
+
+    border-top:1px solid #334155;
+
+    font-size:14px;
+}
+/*==================================================
+AUDIT LOG TABLE
+==================================================*/
+
+.table-container{
+
+    width:100%;
+
+    overflow-x:auto;
+
+    margin-top:20px;
+}
+
+table{
+
+    width:100%;
+
+    border-collapse:collapse;
+
+    background:#1E293B;
+
+    border-radius:15px;
+
+    overflow:hidden;
+}
+
+thead{
+
+    background:#06B6D4;
+
+    color:white;
+}
+
+th{
+
+    padding:16px;
+
+    text-align:left;
+
+    font-size:15px;
+
+    letter-spacing:.5px;
+}
+
+td{
+
+    padding:15px;
+
+    border-bottom:1px solid #334155;
+
+    color:#E2E8F0;
+}
+
+tbody tr{
+
+    transition:.25s;
+}
+
+tbody tr:hover{
+
+    background:#273549;
+}
+
+/*==================================================
+BADGES
+==================================================*/
+
+.badge{
+
+    display:inline-block;
+
+    padding:6px 12px;
+
+    border-radius:30px;
+
+    font-size:13px;
+
+    font-weight:600;
+
+    color:white;
+}
+
+.badge-upload{
+
+    background:#06B6D4;
+}
+
+.badge-download{
+
+    background:#22C55E;
+}
+
+.badge-login{
+
+    background:#3B82F6;
+}
+
+.badge-failed{
+
+    background:#EF4444;
+}
+
+.badge-delete{
+
+    background:#F97316;
+}
+
+.badge-register{
+
+    background:#8B5CF6;
+}
+
+/*==================================================
+LABELS
+==================================================*/
+
+label{
+
+    display:block;
+
+    margin-bottom:8px;
+
+    color:#CBD5E1;
+
+    font-weight:600;
+}
+
+/*==================================================
+MESSAGES
+==================================================*/
+
+.success{
+
+    background:#14532D;
+
+    color:#BBF7D0;
+
+    padding:15px;
+
+    border-radius:10px;
+
+    margin:20px 0;
+}
+
+.error{
+
+    background:#7F1D1D;
+
+    color:#FECACA;
+
+    padding:15px;
+
+    border-radius:10px;
+
+    margin:20px 0;
+}
+
+.warning{
+
+    background:#78350F;
+
+    color:#FDE68A;
+
+    padding:15px;
+
+    border-radius:10px;
+
+    margin:20px 0;
+}
+
+/*==================================================
+SCROLLBAR
+==================================================*/
+
+::-webkit-scrollbar{
+
+    width:10px;
+}
+
+::-webkit-scrollbar-track{
+
+    background:#0F172A;
+}
+
+::-webkit-scrollbar-thumb{
+
+    background:#06B6D4;
+
+    border-radius:20px;
+}
+
+::-webkit-scrollbar-thumb:hover{
+
+    background:#0891B2;
+}
+
+/*==================================================
+ANIMATIONS
+==================================================*/
+
+.card,
+.status-card,
+.security-box{
+
+    transition:all .3s ease;
+}
+
+.card:hover,
+.security-box:hover{
+
+    transform:translateY(-4px);
+
+    box-shadow:0 12px 25px rgba(0,0,0,.25);
+}
+
+/*==================================================
+UTILITY CLASSES
+==================================================*/
+
+.text-center{
+
+    text-align:center;
+}
+
+.mt-10{
+
+    margin-top:10px;
+}
+
+.mt-20{
+
+    margin-top:20px;
+}
+
+.mt-30{
+
+    margin-top:30px;
+}
+
+.mb-10{
+
+    margin-bottom:10px;
+}
+
+.mb-20{
+
+    margin-bottom:20px;
+}
+
+.mb-30{
+
+    margin-bottom:30px;
+}
+
+.flex{
+
+    display:flex;
+}
+
+.space-between{
+
+    justify-content:space-between;
+}
+
+.align-center{
+
+    align-items:center;
+}
+
+/*==================================================
+RESPONSIVE DESIGN
+==================================================*/
+
+@media(max-width:992px){
+
+    .login-container{
+
+        grid-template-columns:1fr;
+    }
+
+    .info-panel{
+
+        padding:40px;
+    }
+
+    .login-card{
+
+        padding:40px;
+    }
+
+    .status-grid{
+
+        grid-template-columns:1fr 1fr;
+    }
+
+    .security-grid{
+
+        grid-template-columns:1fr 1fr;
+    }
+}
+
+@media(max-width:768px){
+
+    .dashboard-header{
+
+        flex-direction:column;
+
+        align-items:flex-start;
+    }
+
+    .user-info{
+
+        flex-direction:column;
+
+        align-items:flex-start;
+    }
+
+    .upload-box{
+
+        flex-direction:column;
+
+        align-items:stretch;
+    }
+
+    .upload-box input{
+
+        width:100%;
+    }
+
+    .status-grid{
+
+        grid-template-columns:1fr;
+    }
+
+    .security-grid{
+
+        grid-template-columns:1fr;
+    }
+
+    .feature-list{
+
+        grid-template-columns:1fr;
+    }
+
+    .file-list li{
+
+        flex-direction:column;
+
+        align-items:flex-start;
+
+        gap:15px;
+    }
+
+    table{
+
+        font-size:14px;
+    }
+
+    h1{
+
+        font-size:28px;
+    }
+
+    h2{
+
+        font-size:24px;
+    }
+}
+
+@media(max-width:480px){
+
+    .container{
+
+        width:95%;
+    }
+
+    .login-page{
+
+        padding:15px;
+    }
+
+    .login-card{
+
+        padding:25px;
+    }
+
+    .info-panel{
+
+        padding:25px;
+    }
+
+    .primary-btn{
+
+        width:100%;
+    }
+
+    button{
+
+        width:100%;
+    }
+}
+
+/*==================================================
+END OF FILE
+SMART CLOUD DATA PROTECTION SYSTEM
+Zero Trust Architecture
+Professional Cyber Theme
+==================================================*/
+/*==================================================
+NEW DASHBOARD & AUDIT LOG IMPROVEMENTS
+==================================================*/
+
+/* Locked Account Warning */
+
+.locked-box{
+
+    background:#7F1D1D;
+
+    border:1px solid #EF4444;
+
+    color:#FECACA;
+
+    padding:20px;
+
+    border-radius:12px;
+
+    margin-bottom:25px;
+
+}
+
+
+/* Dashboard Statistics */
+
+.stats-grid{
+
+    display:grid;
+
+    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+
+    gap:20px;
+
+    margin:25px 0;
+
+}
+
+
+.stat-card{
+
+    background:#273549;
+
+    padding:20px;
+
+    border-radius:12px;
+
+    border:1px solid #334155;
+
+    transition:.3s;
+
+}
+
+
+.stat-card:hover{
+
+    transform:translateY(-4px);
+
+    border-color:#22D3EE;
+
+}
+
+
+.stat-title{
+
+    color:#94A3B8;
+
+    margin-bottom:10px;
+
+}
+
+
+.stat-value{
+
+    font-size:28px;
+
+    color:#F8FAFC;
+
+    font-weight:bold;
+
+}
+
+
+/* Risk Level */
+
+.risk-low{
+
+    color:#22C55E;
+
+    font-weight:bold;
+
+}
+
+
+.risk-medium{
+
+    color:#F59E0B;
+
+    font-weight:bold;
+
+}
+
+
+.risk-high{
+
+    color:#EF4444;
+
+    font-weight:bold;
+
+}
+
+
+/* Recent Activity */
+
+.audit-table{
+
+    width:100%;
+
+    border-collapse:collapse;
+
+    margin-top:15px;
+
+}
+
+
+.audit-table th{
+
+    background:#06B6D4;
+
+    color:white;
+
+    padding:14px;
+
+    text-align:left;
+
+}
+
+
+.audit-table td{
+
+    padding:14px;
+
+    border-bottom:1px solid #334155;
+
+}
+
+
+.audit-table tbody tr:hover{
+
+    background:#273549;
+
+}
+
+
+/* Audit Status */
+
+.status-success{
+
+    color:#22C55E;
+
+    font-weight:bold;
+
+}
+
+
+.status-failed{
+
+    color:#F59E0B;
+
+    font-weight:bold;
+
+}
+
+
+.status-blocked{
+
+    color:#EF4444;
+
+    font-weight:bold;
+
+}
+
+
+/* File Information */
+
+.file-details{
+
+    display:flex;
+
+    flex-direction:column;
+
+    gap:5px;
+
+}
+
+
+.file-details small{
+
+    color:#94A3B8;
+
+}
+
+
+/* Audit Log Table */
+
+.audit-table td:nth-child(6),
+
+.audit-table td:nth-child(7){
+
+    max-width:220px;
+
+    word-break:break-word;
+
+}
+
+
+/* Responsive */
+
+@media(max-width:768px){
+
+    .stats-grid{
+
+        grid-template-columns:1fr;
+
+    }
+
+    .audit-table{
+
+        display:block;
+
+        overflow-x:auto;
+
+    }
+
+}
+
+/*==================================================
+UPGRADE - MFA / ADMIN / HASH CHAIN STYLES
+==================================================*/
+
+/* Header actions */
+
+.header-actions{
+
+    display:flex;
+
+    gap:10px;
+
+    flex-wrap:wrap;
+
+}
+
+/* Admin button */
+
+.admin-btn{
+
+    background:#8B5CF6;
+
+}
+
+.admin-btn:hover{
+
+    background:#7C3AED;
+
+}
+
+/* OTP card */
+
+.otp-card{
+
+    max-width:520px;
+
+    margin:0 auto;
+
+    text-align:center;
+
+}
+
+.otp-info{
+
+    color:#CBD5E1;
+
+    margin-bottom:10px;
+
+    line-height:1.7;
+
+}
+
+.otp-box{
+
+    display:flex;
+
+    flex-direction:column;
+
+    gap:14px;
+
+    margin-top:20px;
+
+}
+
+.otp-input{
+
+    width:100%;
+
+    padding:15px;
+
+    border-radius:10px;
+
+    border:1px solid #475569;
+
+    background:#0F172A;
+
+    color:white;
+
+    font-size:18px;
+
+    text-align:center;
+
+    letter-spacing:6px;
+
+}
+
+.otp-input:focus{
+
+    border-color:#06B6D4;
+
+    box-shadow:0 0 8px rgba(6,182,212,.25);
+
+    outline:none;
+
+}
+
+.otp-input::placeholder{
+
+    letter-spacing:1px;
+
+    color:#64748B;
+
+}
+
+/* Dev mode box */
+
+.dev-box{
+
+    background:#14532D;
+
+    color:#BBF7D0;
+
+    padding:14px;
+
+    border-radius:10px;
+
+    font-size:15px;
+
+}
+
+/* Hash chain cells */
+
+.hash-cell{
+
+    font-family:Consolas,'Courier New',monospace;
+
+    font-size:12px;
+
+    color:#94A3B8;
+
+    white-space:nowrap;
+
+}
+
+.hash-note{
+
+    color:#94A3B8;
+
+    font-size:14px;
+
+    line-height:1.7;
+
+    margin-bottom:15px;
+
+}
+
+/* Two column layout for admin recent activity */
+
+.stats-grid.two-col{
+
+    grid-template-columns:1fr 1fr;
+
+    align-items:start;
+
+}
+
+.stats-grid.two-col .card{
+
+    margin-bottom:0;
+
+}
+
+/* Upload hint text */
+
+.upload-hint{
+
+    color:#64748B;
+
+    font-size:13px;
+
+    margin-top:12px;
+
+    line-height:1.6;
+
+}
+
+/* Responsive for new components */
+
+@media(max-width:992px){
+
+    .stats-grid.two-col{
+
+        grid-template-columns:1fr;
+
+    }
+
+}
+
+@media(max-width:768px){
+
+    .header-actions{
+
+        width:100%;
+
+    }
+
+    .header-actions button{
+
+        flex:1;
+
+    }
+
+}
+
+/*==================================================
+END OF UPGRADE STYLES
+==================================================*/

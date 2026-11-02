@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify OTP | Smart Cloud Data Protection System</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="dashboard-header">
+
+        <div>
+
+            <h1 class="dashboard-title">
+                {% if mode == "unlock" %}
+                    Unlock Your Account
+                {% elif mode == "register" %}
+                    Verify Your Email
+                {% elif mode == "stepup_download" %}
+                    Download Verification
+                {% elif mode == "stepup_delete" %}
+                    Delete File Verification
+                {% elif mode == "stepup_password" %}
+                    Password Change Verification
+                {% else %}
+                    Two-Factor Verification
+                {% endif %}
+            </h1>
+
+            <p class="dashboard-subtitle">
+                {% if mode == "unlock" %}
+                    Account Unlock | One-Time Password
+                {% elif mode == "register" %}
+                    First-Time Email Verification | OTP
+                {% elif mode == "stepup_download" %}
+                    Step-Up Authentication | Email OTP
+                {% elif mode == "stepup_delete" %}
+                    Step-Up Authentication | Email OTP
+                {% elif mode == "stepup_password" %}
+                    Step-Up Authentication | Email OTP
+                {% else %}
+                    Security Verification | Email OTP
+                {% endif %}
+            </p>
+
+        </div>
+
+        <button
+            class="danger"
+            onclick="location.href='{% if mode.startswith("stepup_") %}/dashboard/{{ session.email }}{% else %}/{% endif %}'">
+
+            Cancel
+
+        </button>
+
+    </div>
+
+    <!-- ===================================================== -->
+    <!-- OTP Card -->
+    <!-- ===================================================== -->
+
+    <div class="card otp-card">
+
+        <h2>Enter One-Time Password</h2>
+
+        <p class="otp-info">
+
+            {% if mode == "unlock" %}
+                A 6-digit unlock code was sent to
+            {% elif mode == "register" %}
+                A 6-digit verification code was sent to
+            {% elif mode == "stepup_delete" %}
+                A 6-digit OTP was sent to
+                <strong>{{ email }}</strong> to authorize the deletion of
+                <strong>{{ filename }}</strong>. Deletion is irreversible.
+            {% elif mode == "stepup_download" %}
+                A 6-digit OTP was sent to
+                <strong>{{ email }}</strong> to authorize the download of
+                <strong>{{ filename }}</strong>.
+            {% elif mode == "stepup_password" %}
+                A 6-digit OTP was sent to
+                <strong>{{ email }}</strong> to verify your password change.
+            {% else %}
+                A 6-digit OTP was sent to
+            {% endif %}
+
+            {% if mode not in ["stepup_download", "stepup_delete", "stepup_password"] %}
+                <strong>{{ email }}</strong>.
+            {% endif %}
+
+        </p>
+
+        <p class="otp-info">
+
+            It expires in
+
+            <span id="timer">{{ otp_ttl_seconds }}</span> seconds.
+
+        </p>
+
+        <div class="otp-box">
+
+            <input
+                id="otp"
+                type="text"
+                inputmode="numeric"
+                pattern="[0-9]*"
+                maxlength="6"
+                autocomplete="one-time-code"
+                placeholder="Enter 6-digit OTP"
+                class="otp-input">
+
+            <button
+                class="primary-btn"
+                onclick="verifyOtp()">
+
+                Verify OTP
+
+            </button>
+
+            <button
+                class="upload-btn"
+                onclick="resendOtp()">
+
+                Resend OTP
+
+            </button>
+
+        </div>
+
+        <p id="msg"></p>
+
+        <div id="devBox"
+             style="display:none; margin-top:20px;"
+             class="dev-box">
+
+            <strong>Dev Mode</strong>
+
+            <br>
+
+            Your current OTP is :
+
+            <span id="devOtp"></span>
+
+        </div>
+
+    </div>
+
+    <div class="footer">
+
+        Smart Cloud Data Protection System
+
+        <br>
+
+        Zero Trust Architecture
+
+        <br>
+
+        Email OTP Verification + Security Alerts
+
+    </div>
+
+</div>
+
+<script>
+
+const EMAIL = "{{ email }}";
+const MODE = "{{ mode }}";
+const FILENAME = "{{ filename }}";
+const FILE_ID = "{{ file_id }}";
+const TTL = Number("{{ otp_ttl_seconds }}") || 300;
+const DEV_MODE = {{ 'true' if dev_mode else 'false' }};
+
+const msg = document.getElementById("msg");
+const timerEl = document.getElementById("timer");
+
+const IS_STEPUP = MODE.indexOf("stepup_") === 0;
+const STEPUP_INTENT = IS_STEPUP ? MODE.replace("stepup_", "") : MODE;
+
+function verifyEndpoint() {
+    if (IS_STEPUP) {
+        return STEPUP_INTENT === "password"
+            ? "/verify_password_otp"
+            : "/verify_stepup_otp";
+    }
+    return "/verify_otp";
+}
+
+function resendEndpoint() {
+    return IS_STEPUP ? "/resend_stepup_otp" : "/resend_otp";
+}
+
+let secondsLeft = TTL;
+
+setInterval(() => {
+
+    secondsLeft -= 1;
+
+    if (secondsLeft <= 0) {
+
+        timerEl.innerHTML = "expired";
+
+        msg.innerHTML = "This OTP has expired. Please resend a new one.";
+
+    } else {
+
+        timerEl.innerHTML = secondsLeft;
+
+    }
+
+}, 1000);
+
+function refreshTimer() {
+
+    secondsLeft = TTL;
+
+    timerEl.innerHTML = secondsLeft;
+
+}
+
+function showDevOtp() {
+
+    if (!DEV_MODE) {
+
+        return;
+
+    }
+
+    fetch("/dev/otp")
+
+        .then(r => r.json())
+
+        .then(d => {
+
+            let otp = "";
+
+            if (IS_STEPUP) {
+
+                otp = d.stepup_otp || "";
+
+            } else if (MODE === "unlock") {
+
+                otp = d.unlock_otp || "";
+
+            } else {
+
+                otp = d.otp || "";
+
+            }
+
+            if (otp) {
+
+                document.getElementById("devBox").style.display = "block";
+
+                document.getElementById("devOtp").innerHTML = otp;
+
+            }
+
+        });
+
+}
+
+if (DEV_MODE) {
+
+    showDevOtp();
+
+}
+
+async function verifyOtp() {
+
+    const otp = document.getElementById("otp").value.trim();
+
+    if (otp.length !== 6) {
+
+        msg.innerHTML = "Please enter the 6-digit OTP.";
+
+        return;
+
+    }
+
+    msg.innerHTML = "Verifying...";
+
+    try {
+
+        const res = await fetch(verifyEndpoint(), {
+
+            method: "POST",
+
+            headers: { "Content-Type": "application/json" },
+
+            body: JSON.stringify({
+                email: EMAIL,
+                otp: otp,
+                mode: MODE,
+                intent: IS_STEPUP ? STEPUP_INTENT : MODE,
+                filename: FILENAME,
+                file_id: FILE_ID
+            })
+
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+
+            if (IS_STEPUP) {
+
+                if (STEPUP_INTENT === "download" && data.download_url) {
+
+                    window.location.href = data.download_url;
+
+                } else if (STEPUP_INTENT === "delete") {
+
+                    alert(data.message || "File deleted.");
+
+                    window.location.href = "/dashboard/" + encodeURIComponent(EMAIL);
+
+                } else if (STEPUP_INTENT === "password") {
+
+                    alert(data.message || "Password changed.");
+
+                    window.location.href = "/";
+
+                }
+
+            } else {
+
+                window.location.href =
+
+                    "/dashboard/" + encodeURIComponent(data.email);
+
+            }
+
+        } else {
+
+            msg.innerHTML = data.message || "Verification failed.";
+
+            // A new OTP was issued by the server.
+            if ((data.message || "").includes("new OTP") ||
+                (data.message || "").includes("expired")) {
+
+                refreshTimer();
+
+                showDevOtp();
+
+            }
+
+        }
+
+    } catch (err) {
+
+        console.log(err);
+
+        msg.innerHTML = "Verification failed.";
+
+    }
+
+}
+
+async function resendOtp() {
+
+    msg.innerHTML = "Sending a new OTP...";
+
+    try {
+
+        const res = await fetch(resendEndpoint(), {
+
+            method: "POST",
+
+            headers: { "Content-Type": "application/json" },
+
+            body: JSON.stringify({
+                email: EMAIL,
+                intent: IS_STEPUP ? STEPUP_INTENT : MODE,
+                mode: MODE,
+                filename: FILENAME,
+                file_id: FILE_ID
+            })
+
+        });
+
+        const data = await res.json();
+
+        msg.innerHTML = data.message;
+
+        refreshTimer();
+
+        showDevOtp();
+
+    } catch (err) {
+
+        console.log(err);
+
+        msg.innerHTML = "Failed to resend OTP.";
+
+    }
+
+}
+
+</script>
+
+</body>
+
+</html>

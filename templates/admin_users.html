@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>All Users | Admin</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="dashboard-header">
+
+        <div>
+
+            <h1 class="dashboard-title">All Users</h1>
+
+            <p class="dashboard-subtitle">
+                Risk Scores | Locked Accounts | Admin Controls
+            </p>
+
+        </div>
+
+        <div class="header-actions">
+
+            <button onclick="location.href='/admin'">Admin Dashboard</button>
+
+            <button onclick="location.href='/admin/logs'">All Logs</button>
+
+        </div>
+
+    </div>
+
+    <!-- Search -->
+
+    <div class="card">
+
+        <h2>Search Users</h2>
+
+        <form method="GET" action="/admin/users" class="upload-box">
+
+            <input
+                type="text"
+                name="q"
+                value="{{ search }}"
+                placeholder="Search by email...">
+
+            <button type="submit">Search</button>
+
+            {% if search %}
+
+            <button
+                type="button"
+                class="upload-btn"
+                onclick="location.href='/admin/users'">
+
+                Clear
+
+            </button>
+
+            {% endif %}
+
+        </form>
+
+    </div>
+
+    <!-- Users table -->
+
+    <div class="card">
+
+        <h2>Users ({{ users|length }})</h2>
+
+        <div class="table-container">
+
+        <table class="audit-table">
+
+            <thead>
+
+            <tr>
+
+                <th>ID</th>
+
+                <th>Email</th>
+
+                <th>Risk Score</th>
+
+                <th>Risk Level</th>
+
+                <th>Failed Attempts</th>
+
+                <th>Status</th>
+
+                <th>Role</th>
+
+                <th>Last Login</th>
+
+                <th>Action</th>
+
+            </tr>
+
+            </thead>
+
+            <tbody>
+
+            {% for u in users %}
+
+            <tr>
+
+                <td>{{ u.id }}</td>
+
+                <td>{{ u.email }}</td>
+
+                <td>{{ u.risk_score }}</td>
+
+                <td>
+
+                    {% if get_risk_level(u.risk_score)=="High" %}
+
+                        🔴 High
+
+                    {% elif get_risk_level(u.risk_score)=="Medium" %}
+
+                        🟡 Medium
+
+                    {% else %}
+
+                        🟢 Low
+
+                    {% endif %}
+
+                </td>
+
+                <td>{{ u.failed_attempts }}</td>
+
+                <td>
+
+                    {% if u.account_locked %}
+
+                        🔴 Locked
+
+                    {% else %}
+
+                        🟢 Active
+
+                    {% endif %}
+
+                </td>
+
+                <td>
+
+                    {% if u.is_admin %}
+
+                        👑 Admin
+
+                    {% else %}
+
+                        User
+
+                    {% endif %}
+
+                </td>
+
+                <td>
+
+                    {% if u.last_login %}
+
+                        {{ u.last_login|to_ist }}
+
+                    {% else %}
+
+                        Never
+
+                    {% endif %}
+
+                </td>
+
+                <td>
+
+                    {% if u.account_locked %}
+
+                    <form
+                        method="POST"
+                        action="/admin/unlock/{{ u.id }}"
+                        style="display:inline;">
+
+                        <button
+                            type="submit"
+                            class="download">
+
+                            Unlock
+
+                        </button>
+
+                    </form>
+
+                    {% else %}
+
+                        <span class="status-success">OK</span>
+
+                    {% endif %}
+
+                </td>
+
+            </tr>
+
+            {% endfor %}
+
+            </tbody>
+
+        </table>
+
+        </div>
+
+    </div>
+
+    <div class="footer">
+
+        Smart Cloud Data Protection System | Admin Console
+
+    </div>
+
+</div>
+
+</body>
+
+</html>
